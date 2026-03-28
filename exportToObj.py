@@ -2,7 +2,7 @@ import numpy as np
 import pyvista as pv
 import argparse
 
-def visualizeModflowStructured(filename="aquifer_grid.npz", prop="k"):
+def export_to_obj(filename="aquifer_grid.npz", prop="k"):
     data = np.load(filename)
 
     x_edges = data["x_edges"]
@@ -19,7 +19,6 @@ def visualizeModflowStructured(filename="aquifer_grid.npz", prop="k"):
     for j in range(ncol+1):
         for i in range(nrow+1):
             for k in range(nlay+1):
-
                 X[j, i, k] = x_edges[j]
                 Y[j, i, k] = y_edges[i]
 
@@ -30,23 +29,25 @@ def visualizeModflowStructured(filename="aquifer_grid.npz", prop="k"):
 
     grid = pv.StructuredGrid(X, Y, Z)
 
-    grid.points[:, 2] *= 2   
+    grid.points[:, 2] *= 2
 
-    grid.cell_data[prop] = values.flatten(order="F")
+    surface = grid.extract_surface()
 
-    p = pv.Plotter()
-    p.add_mesh(
-        grid,
-        scalars=prop,
-        cmap="turbo",
-        show_edges=True,
-        opacity=0.7),
-    p.add_axes()
-    p.show()
+    surface = surface.clean()
+
+    surface = surface.fill_holes(1000)
+
+    surface = surface.triangulate()
+
+    surface = surface.decimate(0.5)  
+
+    surface.save("aquifer.obj")
+
+    print("OBJ exportado correctamente")
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(prog='showModelM6')
-    parser.add_argument('npz_file', help='NPZ file to visualize')
+    parser = argparse.ArgumentParser(prog='ExportToObj')
+    parser.add_argument('npz_file', help='NPZ filename')
 
     args = parser.parse_args()
-    visualizeModflowStructured(args.npz_file, prop="k")
+    export_to_obj(args.npz_file)

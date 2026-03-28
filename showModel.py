@@ -1,7 +1,8 @@
 import numpy as np
 import pyvista as pv
+import argparse
 
-def visualizeModflow(filename="aquifer_grid.npz", prop="hk", showGrid=False):
+def visualizeModflow(filename="aquifer_grid.npz", prop="k", showGrid=False):
     # cargamos la data
     data = np.load(filename)
     
@@ -76,12 +77,11 @@ def visualizeModflow(filename="aquifer_grid.npz", prop="hk", showGrid=False):
 
     # Optional: add a grid overlay
     p.add_axes()
-    if showGrid:
-        p.show_grid()
     p.show()
 
-# Example usage:
-# visualize_voxels("aquifer_grid.npz", prop="hk")
 if __name__ == "__main__":
-    visualizeModflow("aquifer_grid.npz", prop="hk")
-    visualizeModflow("aquifer_grid.npz", prop="hk", showGrid=True)
+    parser = argparse.ArgumentParser(prog='showModelM6')
+    parser.add_argument('npz_file', help='NPZ file to visualize')
+
+    args = parser.parse_args()
+    visualizeModflow(args.npz_file)
