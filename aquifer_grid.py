@@ -1,6 +1,8 @@
 import flopy
 import numpy as np
 import pyvista as pv
+import matplotlib.pyplot as plt
+import matplotlib.colors as mcolors
 from pathlib import Path
 import argparse
 
@@ -68,19 +70,19 @@ class AquiferGrid:
     #  Construcción del grid PyVista                                       #
     # ------------------------------------------------------------------ #
 
-    def build_grid(self, prop="k", z_exag=1.0):
-        """
-        Construye un UnstructuredGrid hexaédrico con los datos de la clase.
-        Fuente única de verdad para show_model y export_model.
-        Las celdas con NaN se omiten (útil tras split_by_property).
-        """
+    def build_grid(self, prop="k", z_exag=1.0, xy_scale=1.0):
         self._check_loaded()
 
         values = self.properties[prop]
 
+        # Escalar edges antes de construir
+        x_edges = self.x_edges * xy_scale
+        y_edges = self.y_edges * xy_scale
+
         points_list = []
         cells_list  = []
         cell_values = []
+        layer_ids   = []
         point_cache = {}
 
         def get_pid(x, y, z):
@@ -99,8 +101,8 @@ class AquiferGrid:
                     if np.isnan(val):
                         continue
 
-                    x0, x1 = self.x_edges[j],     self.x_edges[j + 1]
-                    y0, y1 = self.y_edges[i],     self.y_edges[i + 1]
+                    x0, x1 = x_edges[j],     x_edges[j + 1]   # ← escalado
+                    y0, y1 = y_edges[i],     y_edges[i + 1]   # ← escalado
                     zt     = self.z_edges[k,     i, j]
                     zb     = self.z_edges[k + 1, i, j]
 
@@ -113,16 +115,71 @@ class AquiferGrid:
                     ids = [get_pid(*v) for v in verts]
                     cells_list.append([8] + ids)
                     cell_values.append(val)
+                    layer_ids.append(k)
 
         cells      = np.array(cells_list, dtype=np.int64).ravel()
         cell_types = np.full(len(cell_values), hex_type, dtype=np.uint8)
         pts        = np.array(points_list)
 
         grid = pv.UnstructuredGrid(cells, cell_types, pts)
-        grid.cell_data[prop] = np.array(cell_values)
-        grid.points[:, 2]   *= z_exag
+        grid.cell_data[prop]    = np.array(cell_values)
+        grid.cell_data["layer"] = np.array(layer_ids, dtype=np.int32)
+        grid.points[:, 2]      *= z_exag
 
         return grid
+
+    # ------------------------------------------------------------------ #
+    #  Exportación para impresión 3D                                      #
+    # ------------------------------------------------------------------ #
+
+    def export_layers(self, prop="k", z_exag=1.0, cmap="viridis",
+                      log_scale=True, out_dir="layers"):
+        """
+        Exporta una superficie watertight por capa como .ply independiente.
+        Al ensamblarlos en el slicer forman el volumen completo y al cortar
+        transversalmente se ven los colores de cada capa.
+        """
+        self._check_loaded()
+        Path(out_dir).mkdir(exist_ok=True)
+
+        grid      = self.build_grid(prop=prop, z_exag=z_exag, xy_scale=2.0)
+        scalars   = grid.cell_data[prop]
+        layer_ids = grid.cell_data["layer"]
+        cmap_fn   = plt.get_cmap(cmap)
+
+        # Misma normalización que show_model para colores idénticos
+        if log_scale:
+            vmin = np.nanmin(scalars[scalars > 0])
+            vmax = np.nanmax(scalars)
+            norm = mcolors.LogNorm(vmin=vmin, vmax=vmax)
+        else:
+            norm = mcolors.Normalize(vmin=np.nanmin(scalars),
+                                     vmax=np.nanmax(scalars))
+
+        for layer in np.unique(layer_ids):
+            mask    = layer_ids == layer
+            indices = np.where(mask)[0]
+            sub     = grid.extract_cells(indices)
+
+            # Superficie cerrada de esta capa
+            surface = sub.extract_surface()
+            surface = surface.triangulate()
+            surface = surface.fill_holes(100)
+            surface = surface.clean()
+
+            is_ok = surface.is_manifold
+            print(f"Capa {int(layer):02d} — watertight: {is_ok}")
+
+            # Color por celda usando la mediana de k en la capa
+            # (misma lógica que el colormap de show_model)
+            median_val = np.nanmedian(sub.cell_data[prop])
+            rgba   = cmap_fn(norm(median_val))
+            rgb255 = (np.array(rgba[:3]) * 255).astype(np.uint8)
+            surface.cell_data["RGB"] = np.tile(rgb255, (surface.n_cells, 1))
+
+            out_path = f"{out_dir}/layer_{int(layer):02d}.ply"
+            surface.save(out_path)
+            print(f"  → {out_path}")
 
     # ------------------------------------------------------------------ #
     #  División                                                            #
@@ -172,7 +229,9 @@ class AquiferGrid:
                 prop:      np.where(mask, values, np.nan),
             }
             if "k33" in self.properties:
-                groups[group_name]["k33"] = np.where(mask, self.properties["k33"], np.nan)
+                groups[group_name]["k33"] = np.where(
+                    mask, self.properties["k33"], np.nan
+                )
 
         return groups
 
@@ -202,17 +261,28 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(prog="aquiferGridM6")
     parser.add_argument("model_workspace")
     parser.add_argument("simulation_name")
-    parser.add_argument("--cuts", type=int, default=None,
-                        help="Número de cortes espaciales (opcional)")
-    parser.add_argument("--split-prop", default=None,
-                        help="Dividir por propiedad (ej: k)")
-    parser.add_argument("--out", default="aquifer_grid_m6.npz")
+    parser.add_argument("--cuts",       type=int,   default=None)
+    parser.add_argument("--split-prop", default =None)
+    parser.add_argument("--export-layers", action="store_true",
+                        help="Exportar capas individuales para impresión 3D")
+    parser.add_argument("--prop",       default="k")
+    parser.add_argument("--z-exag",     type=float, default=1.0)
+    parser.add_argument("--no-log",     action="store_true")
+    parser.add_argument("--out",        default="aquifer_grid_m6.npz")
+    parser.add_argument("--out-dir",    default="layers")
     args = parser.parse_args()
 
     aquifer = AquiferGrid(args.model_workspace, args.simulation_name)
     aquifer.load()
 
-    if args.cuts:
+    if args.export_layers:
+        aquifer.export_layers(
+            prop=args.prop,
+            z_exag=args.z_exag,
+            log_scale=not args.no_log,
+            out_dir=args.out_dir
+        )
+    elif args.cuts:
         aquifer.export_splitN(args.cuts)
     elif args.split_prop:
         aquifer.export_by_property(args.split_prop)
