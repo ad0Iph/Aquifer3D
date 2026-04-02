@@ -27,7 +27,7 @@ def apply_colormap(grid, prop, cmap="viridis", log_scale=True):
 def visualizeModflow(model_ws, sim_name, prop="k", showGrid=False, z_exag=1.0, log_scale=True,  export=None):    
     aquifer = AquiferGrid(model_ws, sim_name)
     aquifer.load()
-    grid = aquifer.build_grid(prop="k", z_exag=10, xy_scale=10)
+    grid = aquifer.build_grid(prop="k", z_exag=z_exag, xy_scale=1.0)
 
     if export:
         grid_colored = apply_colormap(grid, prop, cmap="viridis", log_scale=log_scale)
