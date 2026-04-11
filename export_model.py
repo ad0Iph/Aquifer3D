@@ -8,6 +8,9 @@ from aquifer_grid import AquiferGrid
 
 
 def build_norm(scalars, log_scale):
+    """
+    Construye un normalizador de Matplotlib para una propiedad dada, considerando si se desea escala logarítmica o lineal.
+    """
     if log_scale:
         vmin = np.nanmin(scalars[scalars > 0])
         vmax = np.nanmax(scalars)
@@ -15,43 +18,67 @@ def build_norm(scalars, log_scale):
     return mcolors.Normalize(vmin=np.nanmin(scalars), vmax=np.nanmax(scalars))
 
 
-def apply_colormap(grid, prop, cmap="viridis", log_scale=True):
+def apply_colormap(grid, prop, cmap="viridis", log_scale=True, norm=None):
+    """
+     Aplica un colormap a un grid de PyVista basado en los valores de una propiedad dada.
+    """
     scalars = grid.cell_data[prop]
-    rgba    = plt.get_cmap(cmap)(build_norm(scalars, log_scale)(scalars))
-    grid.cell_data["RGB"] = (rgba[:, :3] * 255).astype(np.uint8)
+    cmap_fn = plt.get_cmap(cmap)
+    if norm is None:
+        if log_scale:
+            vmin = np.nanmin(scalars[scalars > 0])
+            vmax = np.nanmax(scalars)
+            norm = mcolors.LogNorm(vmin=vmin, vmax=vmax)
+        else:
+            norm = mcolors.Normalize(vmin=np.nanmin(scalars), vmax=np.nanmax(scalars))
+    rgba   = cmap_fn(norm(scalars))
+    rgb255 = (rgba[:, :3] * 255).astype(np.uint8)
+    grid.cell_data["RGB"] = rgb255
     return grid
 
 
 def surface_from_grid(grid, decimate=0.0):
-    surface = grid.extract_surface()
+    """
+    Extrae la superficie de un grid de PyVista y opcionalmente aplica decimación para reducir el número de triángulos.
+    """
+    surface = grid.extract_surface(algorithm='dataset_surface')
     surface = surface.triangulate()
-    surface = surface.fill_holes(100)
-    surface = surface.clean()
     if decimate > 0:
         surface = surface.decimate(decimate)
     return surface
 
-
 def export_single(aquifer, prop, z_exag, xy_scale, log_scale,
                   decimate, out_file):
-    """Exporta el modelo completo como una sola superficie PLY."""
+    """
+    Exporta una única superficie del modelo completo a un archivo PLY, aplicando colormap y opcionalmente decimación.
+    """
     grid    = aquifer.build_grid(prop=prop, z_exag=z_exag, xy_scale=xy_scale)
-    grid    = apply_colormap(grid, prop, log_scale=log_scale)
     surface = surface_from_grid(grid, decimate)
-    print(f"¿Watertight? {surface.is_manifold}")
+
+    # Limpiar ANTES de colorear
+    if not surface.is_manifold:
+        surface = surface.clean(tolerance=1e-4)
+
+    surface = apply_colormap(surface, prop, log_scale=log_scale)
+
+    # Convertir a point data y forzar uint8
+    surface = surface.cell_data_to_point_data()
+    rgb = np.clip(surface.point_data["RGB"], 0, 255).astype(np.uint8)
+    surface.point_data["RGB"] = rgb
+
     surface.save(out_file)
     print(f"Exportado: {out_file}")
 
-
 def export_layers(aquifer, prop, z_exag, xy_scale, log_scale,
                   decimate, out_dir):
-    """Exporta una superficie PLY por capa geológica."""
+    """
+    Exporta una superficie por cada capa del modelo a archivos PLY separados, aplicando colormap y opcionalmente decimación.
+    """
     Path(out_dir).mkdir(exist_ok=True)
 
     grid      = aquifer.build_grid(prop=prop, z_exag=z_exag, xy_scale=xy_scale)
     scalars   = grid.cell_data[prop]
     layer_ids = grid.cell_data["layer"]
-    cmap_fn   = plt.get_cmap("viridis")
     norm      = build_norm(scalars, log_scale)
 
     for layer in np.unique(layer_ids):
@@ -59,16 +86,24 @@ def export_layers(aquifer, prop, z_exag, xy_scale, log_scale,
         sub     = grid.extract_cells(indices)
 
         surface = surface_from_grid(sub, decimate)
-        print(f"Capa {int(layer):02d} — watertight: {surface.is_manifold}")
 
-        median_val = np.nanmedian(sub.cell_data[prop])
-        rgba       = cmap_fn(norm(median_val))
-        rgb255     = (np.array(rgba[:3]) * 255).astype(np.uint8)
-        surface.cell_data["RGB"] = np.tile(rgb255, (surface.n_cells, 1))
+        # Limpiar ANTES de colorear
+        if not surface.is_manifold:
+            surface = surface.clean(tolerance=1e-4)
+
+        surface = apply_colormap(surface, prop, log_scale=log_scale, norm=norm)
+
+        # Convertir a point data y forzar uint8
+        surface = surface.cell_data_to_point_data()
+        rgb = np.clip(surface.point_data["RGB"], 0, 255).astype(np.uint8)
+        surface.point_data["RGB"] = rgb
+
+        print(f"Capa {int(layer):02d} — watertight: {surface.is_manifold}")
 
         out_path = f"{out_dir}/layer_{int(layer):02d}.ply"
         surface.save(out_path)
         print(f"  → {out_path}")
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(prog="exportModelM6")
@@ -98,7 +133,6 @@ if __name__ == "__main__":
     aquifer = AquiferGrid(args.model_workspace, args.simulation_name)
     aquifer.load()
 
-    # Determinar qué subgrids procesar
     if args.cuts:
         targets = aquifer.splitN(args.cuts)
     elif args.split_prop:
