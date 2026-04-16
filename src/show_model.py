@@ -73,7 +73,6 @@ def visualizeModflow(model_ws, sim_name, prop="k", showGrid=False,
     if cuts:
         subgrids = aquifer.splitN(cuts)
 
-        # Norm global para que todos los bloques compartan la misma escala
         all_vals = np.concatenate([
             sub.properties[prop].ravel() for sub in subgrids.values()
         ])
