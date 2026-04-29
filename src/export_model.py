@@ -5,7 +5,7 @@ import matplotlib.colors as mcolors
 import argparse
 from pathlib import Path
 from aquifer_grid_m6 import AquiferGridM6
-
+from mesh_repair import repair_surface
 
 def build_norm(scalars, log_scale):
     if log_scale:
@@ -13,7 +13,6 @@ def build_norm(scalars, log_scale):
         vmax = np.nanmax(scalars)
         return mcolors.LogNorm(vmin=vmin, vmax=vmax)
     return mcolors.Normalize(vmin=np.nanmin(scalars), vmax=np.nanmax(scalars))
-
 
 def apply_colormap(mesh, prop, cmap="viridis", log_scale=True, norm=None):
     scalars = mesh.cell_data[prop]
@@ -27,7 +26,6 @@ def apply_colormap(mesh, prop, cmap="viridis", log_scale=True, norm=None):
     mesh.cell_data["RGB"] = rgb255
     return mesh
 
-
 def finalize_colors_ply(surface):
     surface = surface.cell_data_to_point_data()
     rgb = np.clip(surface.point_data["RGB"], 0, 255).astype(np.uint8)
@@ -39,7 +37,6 @@ def finalize_colors_ply(surface):
 
     return surface
 
-
 def format_value(v):
     if v == 0:
         return "0"
@@ -49,17 +46,15 @@ def format_value(v):
         return f"{v:.4g}"
 
 def export_surface(grid, prop, log_scale, out_file, norm=None,
-                   clean=False, min_ratio=0.01):
+                   repair=False, decimate=0.0, prop_value=None):
     surface = grid.extract_surface()
     surface = surface.triangulate()
 
-    if not surface.is_manifold:
-        surface = surface.clean(tolerance=1e-4)
+    if repair or decimate > 0 or not surface.is_manifold:
+        surface = repair_surface(surface, decimate=decimate)
 
-    if clean:
-        surface = AquiferGridM6.clean_surface(
-            surface, min_ratio=min_ratio, remove_enclosed=True)
-        surface = surface.triangulate()
+    if prop_value is not None:
+        surface.cell_data[prop] = np.full(surface.n_cells, prop_value)
 
     surface = apply_colormap(surface, prop, log_scale=log_scale, norm=norm)
     surface = finalize_colors_ply(surface)
@@ -67,9 +62,8 @@ def export_surface(grid, prop, log_scale, out_file, norm=None,
     surface.save(out_file)
     print(f"  → {out_file}")
 
-
 def export_surface_layers(grid, prop, log_scale, out_dir, norm=None,
-                          clean=False, min_ratio=0.01):
+                          repair=False, decimate=0.0, prop_value=None):
     Path(out_dir).mkdir(parents=True, exist_ok=True)
 
     layer_ids = grid.cell_data["layer"]
@@ -82,13 +76,11 @@ def export_surface_layers(grid, prop, log_scale, out_dir, norm=None,
         surface = sub.extract_surface()
         surface = surface.triangulate()
 
-        if not surface.is_manifold:
-            surface = surface.clean(tolerance=1e-4)
+        if repair or decimate > 0 or not surface.is_manifold:
+            surface = repair_surface(surface, decimate=decimate)
 
-        if clean:
-            surface = AquiferGridM6.clean_surface(
-                surface, min_ratio=min_ratio, remove_enclosed=True)
-            surface = surface.triangulate()
+        if prop_value is not None:
+            surface.cell_data[prop] = np.full(surface.n_cells, prop_value)
 
         surface = apply_colormap(surface, prop, log_scale=log_scale, norm=norm)
         surface = finalize_colors_ply(surface)
@@ -97,64 +89,29 @@ def export_surface_layers(grid, prop, log_scale, out_dir, norm=None,
         surface.save(out_path)
         print(f"    → {out_path}")
 
-def export_cubes(grid, prop, log_scale, out_file, norm=None):
-    grid = apply_colormap(grid, prop, log_scale=log_scale, norm=norm)
-    grid.save(out_file)
-    print(f"  → {out_file}  ({grid.n_cells} celdas)")
-
-
-def export_cubes_layers(grid, prop, log_scale, out_dir, norm=None):
-    Path(out_dir).mkdir(parents=True, exist_ok=True)
-
-    layer_ids = grid.cell_data["layer"]
-    if norm is None:
-        norm = build_norm(grid.cell_data[prop], log_scale)
-
-    for layer in np.unique(layer_ids):
-        sub = grid.extract_cells(np.where(layer_ids == layer)[0])
-        sub = apply_colormap(sub, prop, log_scale=log_scale, norm=norm)
-
-        out_path = f"{out_dir}/layer_{int(layer):02d}.vtk"
-        sub.save(out_path)
-        print(f"    → {out_path}  ({sub.n_cells} celdas)")
-
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         prog="exportModelM6",
-        description="Exporta un modelo MODFLOW 6 como malla 3D.",
+        description="Exporta un modelo MODFLOW 6 como malla 3D (.ply).",
     )
     parser.add_argument("model_workspace")
     parser.add_argument("--prop",         default="k")
     parser.add_argument("--z-exag",       type=float, default=1.0)
     parser.add_argument("--no-log",       action="store_true")
 
-    mode = parser.add_mutually_exclusive_group()
-    mode.add_argument("--cubes",   action="store_true",
-                      help="Exportar hexaedros (.vtk)")
-    mode.add_argument("--surface", action="store_true", default=True,
-                      help="Exportar superficie triangulada (.ply) [default]")
+    parser.add_argument("--layers",       action="store_true", help="Un archivo por capa geológica")
+    parser.add_argument("--cuts",         type=int, default=None, help="Subdividir en NxN bloques espaciales")
+    parser.add_argument("--split-unique", action="store_true", help="Un archivo por cada valor distinto de la propiedad")
+    parser.add_argument("--repair",       action="store_true", help="Reparar mallas para que sean watertight")
+    parser.add_argument("--decimate",     type=float, default=0.0, help="Fracción de caras a eliminar (0.0-0.99). ""Ej: 0.5 = reducir 50%%, 0.9 = reducir 90%%")
 
-    parser.add_argument("--layers",       action="store_true",
-                        help="Un archivo por capa geológica")
-    parser.add_argument("--cuts",         type=int, default=None,
-                        help="Subdividir en NxN bloques espaciales")
-    parser.add_argument("--split-unique", action="store_true",
-                        help="Un archivo por cada valor distinto de la propiedad")
-    parser.add_argument("--clean",        action="store_true",
-                        help="Eliminar componentes pequeños y encerrados (para impresión 3D)")
-    parser.add_argument("--min-ratio",    type=float, default=0.01,
-                        help="Fracción mínima respecto al mayor componente (default: 0.01 = 1%%)")
-
-    parser.add_argument("--out",     default=None)
+    parser.add_argument("--out",     default="aquifer.ply")
     parser.add_argument("--out-dir", default="export")
 
     args = parser.parse_args()
 
     log_scale = not args.no_log
-    use_cubes = args.cubes
-    ext       = ".vtk" if use_cubes else ".ply"
-    out_file  = args.out or f"aquifer{ext}"
-    clean_kw  = dict(clean=args.clean, min_ratio=args.min_ratio)
+    repair_kw = dict(repair=args.repair, decimate=args.decimate)
 
     aquifer = AquiferGridM6(args.model_workspace)
     aquifer.load()
@@ -183,34 +140,22 @@ if __name__ == "__main__":
 
                 if args.layers:
                     layer_dir = f"{seg_dir}/{fname}"
-                    if use_cubes:
-                        export_cubes_layers(seg_grid, args.prop, log_scale,
-                                            layer_dir, norm=norm)
-                    else:
-                        export_surface_layers(seg_grid, args.prop, log_scale,
-                                              layer_dir, norm=norm, **clean_kw)
+                    export_surface_layers(seg_grid, args.prop, log_scale,
+                                          layer_dir, norm=norm,
+                                          prop_value=val, **repair_kw)
                 else:
-                    seg_out = f"{seg_dir}/{fname}{ext}"
-                    if use_cubes:
-                        export_cubes(seg_grid, args.prop, log_scale,
-                                     seg_out, norm=norm)
-                    else:
-                        export_surface(seg_grid, args.prop, log_scale,
-                                       seg_out, norm=norm, **clean_kw)
+                    seg_out = f"{seg_dir}/{fname}.ply"
+                    export_surface(seg_grid, args.prop, log_scale,
+                                   seg_out, norm=norm,
+                                   prop_value=val, **repair_kw)
 
         else:
-            out = out_file if name == "model" else f"{args.out_dir}/{name}{ext}"
+            out = args.out if name == "model" else f"{args.out_dir}/{name}.ply"
 
             if args.layers:
                 sub_dir = f"{args.out_dir}/{name}" if name != "model" else args.out_dir
-                if use_cubes:
-                    export_cubes_layers(grid, args.prop, log_scale, sub_dir, norm=norm)
-                else:
-                    export_surface_layers(grid, args.prop, log_scale, sub_dir,
-                                          norm=norm, **clean_kw)
+                export_surface_layers(grid, args.prop, log_scale, sub_dir,
+                                      norm=norm, **repair_kw)
             else:
-                if use_cubes:
-                    export_cubes(grid, args.prop, log_scale, out, norm=norm)
-                else:
-                    export_surface(grid, args.prop, log_scale, out,
-                                   norm=norm, **clean_kw)
+                export_surface(grid, args.prop, log_scale, out,
+                               norm=norm, **repair_kw)

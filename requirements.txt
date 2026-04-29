@@ -1,0 +1,5 @@
+flopy==3.9.0
+numpy==2.2.3
+pyvista==0.44.2
+matplotlib==3.10.1
+pybind11==2.13.6

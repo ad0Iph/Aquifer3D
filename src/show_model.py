@@ -4,6 +4,15 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
 from aquifer_grid_m6 import AquiferGridM6
+from mesh_repair import repair_surface
+
+
+def build_norm(scalars, log_scale):
+    if log_scale:
+        vmin = np.nanmin(scalars[scalars > 0])
+        vmax = np.nanmax(scalars)
+        return mcolors.LogNorm(vmin=vmin, vmax=vmax)
+    return mcolors.Normalize(vmin=np.nanmin(scalars), vmax=np.nanmax(scalars))
 
 
 def apply_colormap(surface, prop, cmap="viridis", log_scale=True, norm=None):
@@ -24,19 +33,8 @@ def apply_colormap(surface, prop, cmap="viridis", log_scale=True, norm=None):
     return surface
 
 
-def prepare_colored_surface(grid, prop, log_scale=True, cmap="viridis",
-                            norm=None, decimate=0.0):
-    surface = grid.extract_surface()
-    surface = surface.triangulate()
-
-    if decimate > 0:
-        surface = surface.decimate(decimate)
-
-    if not surface.is_manifold:
-        surface = surface.clean(tolerance=1e-4)
-
-    surface = apply_colormap(surface, prop, cmap=cmap, log_scale=log_scale, norm=norm)
-
+def finalize_colors_ply(surface):
+    """Convierte cell_data RGB → point_data con canales separados."""
     surface = surface.cell_data_to_point_data()
     rgb = np.clip(surface.point_data["RGB"], 0, 255).astype(np.uint8)
 
@@ -48,8 +46,18 @@ def prepare_colored_surface(grid, prop, log_scale=True, cmap="viridis",
     return surface
 
 
-def finalize_colors_ply(surface):
-    """Convierte cell_data RGB → point_data con canales separados."""
+def prepare_colored_surface(grid, prop, log_scale=True, cmap="viridis",
+                            norm=None, decimate=0.0):
+    """Pipeline para exportación: grid → superficie → reparar/simplificar → colorear."""
+    surface = grid.extract_surface()
+    surface = surface.triangulate()
+
+    # Toda reparación y simplificación pasa por mesh_repair (usa CGAL si disponible)
+    if decimate > 0 or not surface.is_manifold:
+        surface = repair_surface(surface, decimate=decimate)
+
+    surface = apply_colormap(surface, prop, cmap=cmap, log_scale=log_scale, norm=norm)
+
     surface = surface.cell_data_to_point_data()
     rgb = np.clip(surface.point_data["RGB"], 0, 255).astype(np.uint8)
 
@@ -73,7 +81,7 @@ def format_value(v):
 def visualizeModflow(model_ws, prop="k", showGrid=False,
                      z_exag=1.0, log_scale=True, export=None,
                      clip=False, cuts=None, split_unique=False,
-                     clean=False, min_ratio=0.01):
+                     repair=False, decimate=0.0):
     aquifer = AquiferGridM6(model_ws)
     aquifer.load()
 
@@ -83,23 +91,23 @@ def visualizeModflow(model_ws, prop="k", showGrid=False,
         scalar_bar_args={"title": f"{'log10(' + prop + ')' if log_scale else prop}"},
     )
 
+    # ── Modo split-unique: un checkbox por valor distinto ───────────
     if split_unique:
         grid = aquifer.build_grid(prop=prop, z_exag=z_exag)
         segments = AquiferGridM6.split_grid_by_unique(grid, prop=prop)
+
+        global_norm = build_norm(grid.cell_data[prop], log_scale)
 
         print(f"Detectados {len(segments)} valores distintos de '{prop}':")
 
         surfaces = {}
         for val, seg_grid in segments.items():
             surface = seg_grid.extract_surface().triangulate()
-            if not surface.is_manifold:
-                surface = surface.clean(tolerance=1e-4)
-            if clean:
-                surface = AquiferGridM6.clean_surface(
-                    surface, min_ratio=min_ratio, remove_enclosed=True)
-                surface = surface.triangulate()
+            if repair or decimate > 0 or not surface.is_manifold:
+                surface = repair_surface(surface, decimate=decimate)
             surfaces[val] = surface
-            print(f"  {format_value(val):>12s}  →  {surface.n_cells} caras")
+            status = "✓" if surface.is_manifold else "✗"
+            print(f"  {format_value(val):>12s}  →  {surface.n_cells} caras  {status}")
 
         p = pv.Plotter()
         p.background_color = "white"
@@ -152,7 +160,9 @@ def visualizeModflow(model_ws, prop="k", showGrid=False,
             Path(out_dir).mkdir(parents=True, exist_ok=True)
             for val, surface in surfaces.items():
                 out_path = f"{out_dir}/{prop}_{format_value(val)}.ply"
-                colored = apply_colormap(surface, prop, log_scale=log_scale)
+                surface.cell_data[prop] = np.full(surface.n_cells, val)
+                colored = apply_colormap(surface, prop, log_scale=log_scale,
+                                         norm=global_norm)
                 colored = finalize_colors_ply(colored)
                 colored.save(out_path)
                 print(f"Exportado: {out_path}")
@@ -160,6 +170,7 @@ def visualizeModflow(model_ws, prop="k", showGrid=False,
         p.show(title=f"{prop}: {n} valores únicos")
         return
 
+    # ── Modo cuts ───────────────────────────────────────────────────
     if cuts:
         subgrids = aquifer.splitN(cuts)
 
@@ -189,12 +200,15 @@ def visualizeModflow(model_ws, prop="k", showGrid=False,
             if export:
                 out_path = f"{export}_{name}.ply"
                 surface = prepare_colored_surface(grid, prop,
-                                                  log_scale=log_scale, norm=norm)
+                                                  log_scale=log_scale,
+                                                  norm=norm,
+                                                  decimate=decimate)
                 surface.save(out_path)
                 print(f"Exportado: {out_path}")
 
             p.show(title=f"Bloque: {name}")
 
+    # ── Modo normal ─────────────────────────────────────────────────
     else:
         p = pv.Plotter()
         p.background_color = "white"
@@ -204,7 +218,9 @@ def visualizeModflow(model_ws, prop="k", showGrid=False,
         if export:
             out_path = export if export.endswith(".ply") else \
                        export.rsplit(".", 1)[0] + ".ply"
-            surface = prepare_colored_surface(grid, prop, log_scale=log_scale)
+            surface = prepare_colored_surface(grid, prop,
+                                              log_scale=log_scale,
+                                              decimate=decimate)
             surface.save(out_path)
             print(f"Exportado: {out_path}")
 
@@ -230,10 +246,11 @@ if __name__ == "__main__":
                         help="Visualizar modelo dividido en NxN bloques")
     parser.add_argument("--split-unique", action="store_true",
                         help="Un checkbox por cada valor distinto de la propiedad")
-    parser.add_argument("--clean",        action="store_true",
-                        help="Eliminar componentes pequeños y encerrados (para impresión 3D)")
-    parser.add_argument("--min-ratio",    type=float, default=0.01,
-                        help="Fracción mínima respecto al mayor componente (default: 0.01 = 1%%)")
+    parser.add_argument("--repair",       action="store_true",
+                        help="Reparar mallas para que sean watertight")
+    parser.add_argument("--decimate",     type=float, default=0.0,
+                        help="Fracción de caras a eliminar (0.0-0.99). "
+                             "Ej: 0.5 = reducir 50%%, 0.9 = reducir 90%%")
     parser.add_argument("--export",       default=None)
 
     args = parser.parse_args()
@@ -248,6 +265,6 @@ if __name__ == "__main__":
         clip=args.clip,
         cuts=args.cuts,
         split_unique=args.split_unique,
-        clean=args.clean,
-        min_ratio=args.min_ratio,
+        repair=args.repair,
+        decimate=args.decimate,
     )
