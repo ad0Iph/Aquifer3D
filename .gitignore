@@ -21,4 +21,3 @@ cgal_repair/build/
 # Cache python
 __pycache__/
 *.pyc
-

@@ -100,7 +100,6 @@ if __name__ == "__main__":
     parser.add_argument("--no-log",       action="store_true")
 
     parser.add_argument("--layers",       action="store_true", help="Un archivo por capa geológica")
-    parser.add_argument("--cuts",         type=int, default=None, help="Subdividir en NxN bloques espaciales")
     parser.add_argument("--split-unique", action="store_true", help="Un archivo por cada valor distinto de la propiedad")
     parser.add_argument("--repair",       action="store_true", help="Reparar mallas para que sean watertight")
     parser.add_argument("--decimate",     type=float, default=0.0, help="Fracción de caras a eliminar (0.0-0.99). ""Ej: 0.5 = reducir 50%%, 0.9 = reducir 90%%")
@@ -116,10 +115,7 @@ if __name__ == "__main__":
     aquifer = AquiferGridM6(args.model_workspace)
     aquifer.load()
 
-    if args.cuts:
-        targets = aquifer.splitN(args.cuts)
-    else:
-        targets = {"model": aquifer}
+    targets = {"model": aquifer}
 
     for name, sub in targets.items():
         print(f"\n[{name}]")
@@ -128,7 +124,7 @@ if __name__ == "__main__":
         norm = build_norm(grid.cell_data[args.prop], log_scale)
 
         if args.split_unique:
-            segments = AquiferGridM6.split_grid_by_unique(grid, prop=args.prop)
+            segments = AquiferGridM6.split_grid_by_prop(grid, prop=args.prop)
             seg_dir = f"{args.out_dir}/{name}" if name != "model" else args.out_dir
             Path(seg_dir).mkdir(parents=True, exist_ok=True)
 

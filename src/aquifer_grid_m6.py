@@ -67,12 +67,12 @@ class AquiferGridM6:
         except Exception:
             pass
 
-    def build_grid(self, prop="k", z_exag=1.0, xy_scale=1.0):
+    def build_grid(self, prop="k", z_exag=1.0):
         self._check_loaded()
 
         values  = self.properties[prop]
-        x_edges = self.x_edges * xy_scale
-        y_edges = self.y_edges * xy_scale
+        x_edges = self.x_edges
+        y_edges = self.y_edges
         nlay, nrow, ncol = self.nlay, self.nrow, self.ncol
 
         K, I, J = np.mgrid[0:nlay + 1, 0:nrow + 1, 0:ncol + 1]
@@ -115,35 +115,8 @@ class AquiferGridM6:
 
         return grid
 
-    def splitN(self, N):
-        self._check_loaded()
-        row_splits = np.linspace(0, self.nrow, N + 1, dtype=int)
-        col_splits = np.linspace(0, self.ncol, N + 1, dtype=int)
-
-        subgrids = {}
-        for i in range(N):
-            for j in range(N):
-                r0, r1 = row_splits[i], row_splits[i + 1]
-                c0, c1 = col_splits[j], col_splits[j + 1]
-
-                subgrids[f"block_{i}_{j}"] = AquiferGridM6.from_subset(
-                    nlay       = self.nlay,
-                    nrow       = r1 - r0,
-                    ncol       = c1 - c0,
-                    x_edges    = self.x_edges[c0:c1 + 1],
-                    y_edges    = self.y_edges[r0:r1 + 1],
-                    z_edges    = self.z_edges[:, r0:r1, c0:c1],
-                    properties = {k: v[:, r0:r1, c0:c1]
-                                  for k, v in self.properties.items()},
-                )
-        return subgrids
-
     @staticmethod
-    def split_grid_by_unique(grid, prop="k"):
-        """
-        Detecta todos los valores distintos de una propiedad y retorna
-        un subgrid por cada valor único, ordenado de menor a mayor.
-        """
+    def split_grid_by_prop(grid, prop="k"):
         scalars = grid.cell_data[prop]
         unique_vals = np.unique(scalars[~np.isnan(scalars)])
 

@@ -104,8 +104,6 @@ extract_mesh(const Mesh& mesh)
     return {out_verts, out_faces};
 }
 
-// ── Funciones expuestas a Python ────────────────────────────────────
-
 /// Repara una malla para hacerla watertight.
 std::tuple<py::array_t<double>, py::array_t<int>>
 repair_mesh(py::array_t<double> vertices_np, py::array_t<int> faces_np)
@@ -151,20 +149,14 @@ repair_mesh(py::array_t<double> vertices_np, py::array_t<int> faces_np)
     return extract_mesh(mesh);
 }
 
-/// Simplifica una malla reduciendo el número de caras.
-///
-/// ratio: fracción de aristas a mantener (0.5 = mantener 50%, resultado ~50% caras).
-/// Usa edge collapse con costo por longitud de arista y colocación en punto medio.
 std::tuple<py::array_t<double>, py::array_t<int>>
 simplify_mesh(py::array_t<double> vertices_np, py::array_t<int> faces_np,
               double ratio)
 {
     Mesh mesh = build_mesh(vertices_np, faces_np);
 
-    // Stop predicate: mantener ratio de aristas
     SMS::Count_ratio_stop_predicate<Mesh> stop(ratio);
 
-    // Edge collapse: costo = longitud de arista, colocación = punto medio
     SMS::edge_collapse(
         mesh,
         stop,
@@ -172,7 +164,6 @@ simplify_mesh(py::array_t<double> vertices_np, py::array_t<int> faces_np,
                          .get_placement(SMS::Midpoint_placement<Mesh>())
     );
 
-    // Limpiar vértices huérfanos
     mesh.collect_garbage();
 
     return extract_mesh(mesh);

@@ -80,7 +80,7 @@ def format_value(v):
 
 def visualizeModflow(model_ws, prop="k", showGrid=False,
                      z_exag=1.0, log_scale=True, export=None,
-                     clip=False, cuts=None, split_unique=False,
+                     clip=False, split_unique=False,
                      repair=False, decimate=0.0):
     aquifer = AquiferGridM6(model_ws)
     aquifer.load()
@@ -94,7 +94,7 @@ def visualizeModflow(model_ws, prop="k", showGrid=False,
     # ── Modo split-unique: un checkbox por valor distinto ───────────
     if split_unique:
         grid = aquifer.build_grid(prop=prop, z_exag=z_exag)
-        segments = AquiferGridM6.split_grid_by_unique(grid, prop=prop)
+        segments = AquiferGridM6.split_grid_by_prop(grid, prop=prop)
 
         global_norm = build_norm(grid.cell_data[prop], log_scale)
 
@@ -170,67 +170,27 @@ def visualizeModflow(model_ws, prop="k", showGrid=False,
         p.show(title=f"{prop}: {n} valores únicos")
         return
 
-    # ── Modo cuts ───────────────────────────────────────────────────
-    if cuts:
-        subgrids = aquifer.splitN(cuts)
+    p = pv.Plotter()
+    p.background_color = "white"
 
-        all_vals = np.concatenate([
-            sub.properties[prop].ravel() for sub in subgrids.values()
-        ])
-        all_vals = all_vals[~np.isnan(all_vals)]
-        if log_scale:
-            norm = mcolors.LogNorm(vmin=all_vals[all_vals > 0].min(),
-                                   vmax=all_vals.max())
-        else:
-            norm = mcolors.Normalize(vmin=all_vals.min(), vmax=all_vals.max())
+    grid = aquifer.build_grid(prop=prop, z_exag=z_exag)
 
-        for name, sub in subgrids.items():
-            p = pv.Plotter()
-            p.background_color = "white"
+    if export:
+        out_path = export if export.endswith(".ply") else \
+                    export.rsplit(".", 1)[0] + ".ply"
+        surface = prepare_colored_surface(grid, prop,
+                                            log_scale=log_scale,
+                                            decimate=decimate)
+        surface.save(out_path)
+        print(f"Exportado: {out_path}")
 
-            grid = sub.build_grid(prop=prop, z_exag=z_exag)
-
-            if clip:
-                p.add_mesh_clip_plane(grid, **mesh_kwargs)
-            else:
-                p.add_mesh(grid, **mesh_kwargs)
-
-            p.add_axes(xlabel="X (m)", ylabel="Y (m)", zlabel="Z (m)")
-
-            if export:
-                out_path = f"{export}_{name}.ply"
-                surface = prepare_colored_surface(grid, prop,
-                                                  log_scale=log_scale,
-                                                  norm=norm,
-                                                  decimate=decimate)
-                surface.save(out_path)
-                print(f"Exportado: {out_path}")
-
-            p.show(title=f"Bloque: {name}")
-
-    # ── Modo normal ─────────────────────────────────────────────────
+    if clip:
+        p.add_mesh_clip_plane(grid, **mesh_kwargs)
     else:
-        p = pv.Plotter()
-        p.background_color = "white"
+        p.add_mesh(grid, **mesh_kwargs)
 
-        grid = aquifer.build_grid(prop=prop, z_exag=z_exag)
-
-        if export:
-            out_path = export if export.endswith(".ply") else \
-                       export.rsplit(".", 1)[0] + ".ply"
-            surface = prepare_colored_surface(grid, prop,
-                                              log_scale=log_scale,
-                                              decimate=decimate)
-            surface.save(out_path)
-            print(f"Exportado: {out_path}")
-
-        if clip:
-            p.add_mesh_clip_plane(grid, **mesh_kwargs)
-        else:
-            p.add_mesh(grid, **mesh_kwargs)
-
-        p.add_axes(xlabel="X (m)", ylabel="Y (m)", zlabel="Z (m)")
-        p.show()
+    p.add_axes(xlabel="X (m)", ylabel="Y (m)", zlabel="Z (m)")
+    p.show()
 
 
 if __name__ == "__main__":
@@ -242,8 +202,6 @@ if __name__ == "__main__":
     parser.add_argument("--no-log",       action="store_true")
     parser.add_argument("--clip",         action="store_true",
                         help="Plano de corte interactivo")
-    parser.add_argument("--cuts",         type=int, default=None,
-                        help="Visualizar modelo dividido en NxN bloques")
     parser.add_argument("--split-unique", action="store_true",
                         help="Un checkbox por cada valor distinto de la propiedad")
     parser.add_argument("--repair",       action="store_true",
@@ -263,7 +221,6 @@ if __name__ == "__main__":
         log_scale=not args.no_log,
         export=args.export,
         clip=args.clip,
-        cuts=args.cuts,
         split_unique=args.split_unique,
         repair=args.repair,
         decimate=args.decimate,

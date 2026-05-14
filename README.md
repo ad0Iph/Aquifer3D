@@ -185,10 +185,10 @@ Cuando se usa `--repair`, la reparación sigue este pipeline:
 6. **triangulate_faces** — asegura que todo son triángulos
 7. **orient_to_bound_a_volume** — normales hacia afuera (si la malla es cerrada)
 
-Cuando se usa `--decimate`, la simplificación usa **edge collapse** de CGAL con costo por longitud de arista y colocación en punto medio, que preserva mejor la geometría que `pyvista.decimate`.
+Cuando se usa `--decimate`, la simplificación usa **edge collapse** de CGAL con costo por longitud de arista y colocación en punto medio, que preserva mejor la geometría que `pyvista`.
 
 ## Dependencias
 
 - **Python**: flopy, numpy, pyvista, matplotlib, pybind11
-- **C++ (opcional)**: CGAL, GMP, MPFR
+- **C++**: CGAL, GMP, MPFR
 - **Compilación**: CMake, Visual Studio Build Tools (Windows) o GCC (Linux)

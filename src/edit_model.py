@@ -1,16 +1,6 @@
-"""
-edit_model.py — Lanza el editor interactivo de mallas de acuíferos.
-
-Uso:
-    python edit_model.py ../modelo
-    python edit_model.py ../modelo --z-exag 10
-    python edit_model.py ../modelo --simplification 0.5
-"""
-
 import argparse
 from aquifer_grid_m6 import AquiferGridM6
 from aquifer_editor import AquiferEditor
-
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(

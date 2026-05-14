@@ -1,30 +1,8 @@
-"""
-aquifer_editor.py — Editor interactivo de mallas de acuíferos.
-
-Funcionalidades:
-  1. Visualización con checkboxes por valor de propiedad
-  2. Navegación por componentes conexos con teclado
-  3. Corte transversal por propiedad
-  4. Exportación de mallas visibles (tecla E)
-
-Flujo de reasignación:
-  1. Tecla S         → modo selección
-  2. Tecla 1-9       → selecciona grupo fuente, calcula componentes
-  3. Tecla N / P     → navega entre componentes
-  4. Tecla D + 1-9   → elige grupo destino
-  5. Tecla G         → confirma reasignación
-  6. Esc             → cancela
-
-Uso:
-    python edit_model.py ../modelo --z-exag 10
-"""
-
 import numpy as np
 import pyvista as pv
 import matplotlib.pyplot as plt
 from pathlib import Path
 from mesh_repair import repair_surface
-
 
 def format_value(v):
     if v == 0:
@@ -33,7 +11,6 @@ def format_value(v):
         return f"{v:.2e}"
     else:
         return f"{v:.4g}"
-
 
 class AquiferEditor:
 
@@ -120,15 +97,6 @@ class AquiferEditor:
             self.original_surfaces[val] = surface.copy()
 
     def _compute_components(self, group_key):
-        """
-        Calcula los componentes conexos de un grupo.
-
-        Usa connectivity sobre el SUBGRID (hexaedros) directamente.
-        Así cada hexaedro recibe un RegionId y el mapeo a celdas
-        del grid principal es directo: group_cell_indices[region_mask].
-
-        No dependemos de vtkOriginalCellIds ni de mapeos superficie→grid.
-        """
         group_mask = self.group_ids == group_key
         group_cell_indices = np.where(group_mask)[0]
 
@@ -137,20 +105,16 @@ class AquiferEditor:
 
         sub_grid = self.grid.extract_cells(group_cell_indices)
 
-        # Connectivity sobre hexaedros: cada celda recibe un RegionId
         connected = sub_grid.connectivity(extraction_mode='all')
         region_ids = connected.cell_data["RegionId"]
         unique_regions = np.unique(region_ids)
 
         components = []
         for rid in np.sort(unique_regions):
-            # Máscara de celdas del subgrid en esta región
             region_mask = region_ids == rid
 
-            # Índices del grid principal
             grid_cells = group_cell_indices[region_mask]
 
-            # Superficie para visualización
             comp_grid = connected.extract_cells(np.where(region_mask)[0])
             comp_surface = comp_grid.extract_surface(algorithm=None).triangulate()
 
