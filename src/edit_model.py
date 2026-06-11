@@ -9,6 +9,9 @@ if __name__ == "__main__":
     parser.add_argument("--z-exag",          type=float, default=1.0)
     parser.add_argument("--simplification",  type=float, default=0.0,
                         help="Fracción de caras a eliminar (0.0-0.99)")
+    parser.add_argument("--tolerance",       type=float, default=0.15,
+                        help="Holgura en mm por lado para impresión 3D "
+                             "(default: 0.15mm, gap total = 0.30mm)")
 
     args = parser.parse_args()
 
@@ -18,5 +21,6 @@ if __name__ == "__main__":
     editor = AquiferEditor(
         aquifer, prop=args.prop, z_exag=args.z_exag,
         decimate=args.simplification,
+        tolerance=args.tolerance,
     )
     editor.show()

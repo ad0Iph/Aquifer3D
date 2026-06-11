@@ -65,10 +65,11 @@ class AquiferEditor:
     MODE_BROWSE = "browse"
     MODE_DESTINATION = "dest"
 
-    def __init__(self, aquifer, prop="k", z_exag=1.0, decimate=0.0):
+    def __init__(self, aquifer, prop="k", z_exag=1.0, decimate=0.0, tolerance=0.15):
         self.prop = prop
         self.z_exag = z_exag
         self.decimate = decimate
+        self.tolerance = tolerance  # mm de holgura por lado
 
         # ── 1. Grid completo ────────────────────────────────────────
         self.grid = aquifer.build_grid(prop=prop, z_exag=z_exag)
@@ -115,7 +116,17 @@ class AquiferEditor:
         self._rot_step = 5.0
         self._original_style = None
 
-        # ── 7. Plotter ──────────────────────────────────────────────
+        # ── 7. Tolerancia para impresión (tecla L) ──────────────────
+        self._prepared = False
+
+        # ── 7. Preparación para impresión (tecla P) ─────────────────
+        self._prepared = False
+        # Superficie del grid completo: solo caras exteriores.
+        # Se usa para distinguir caras de frontera (entre grupos)
+        # de caras exteriores (borde del modelo).
+        self._full_surface = self.grid.extract_surface(algorithm=None)
+
+        # ── 8. Plotter ──────────────────────────────────────────────
         self.plotter = None
         self._group_keys_ordered = group_keys
         self._status_actor = None
@@ -606,6 +617,98 @@ class AquiferEditor:
         self._cut_line_actors.clear()
 
     # ═══════════════════════════════════════════════════════════════════
+    # Preparación para impresión (tecla L)
+    # ═══════════════════════════════════════════════════════════════════
+
+    def _prepare_for_printing(self):
+        """
+        Tecla L: aplica tolerancia de holgura en las caras de frontera.
+
+        Identifica vértices de frontera (donde dos piezas se tocan)
+        comparando la superficie de cada grupo con la superficie del
+        grid completo. Vértices que NO están en la superficie del grid
+        completo son de frontera y se desplazan hacia adentro.
+        """
+        if self._prepared:
+            self._prepared = False
+            self._refresh_all_actors()
+            self._update_status("Tolerancia revertida — superficies originales")
+            return
+
+        try:
+            tol = self.tolerance
+            self._update_status(f"Aplicando tolerancia de {tol} mm...")
+            self.plotter.render()
+
+            # Superficie exterior del grid completo (precalculada en __init__)
+            full_surface = self._full_surface.triangulate()
+            full_pts = np.round(np.asarray(full_surface.points), decimals=6)
+            full_set = set(map(tuple, full_pts))
+
+            for key in list(self.surfaces.keys()):
+                surface = self.surfaces[key]
+                if surface is None or surface.n_cells == 0:
+                    continue
+
+                pts = np.asarray(surface.points).copy()
+                n_pts = len(pts)
+
+                # Identificar vértices de frontera:
+                # vértices que NO están en la superficie exterior del grid
+                is_boundary = np.zeros(n_pts, dtype=bool)
+                for i in range(n_pts):
+                    pt_rounded = tuple(np.round(pts[i], decimals=6))
+                    if pt_rounded not in full_set:
+                        is_boundary[i] = True
+
+                if not np.any(is_boundary):
+                    continue
+
+                # Calcular normales por cara
+                surface.compute_normals(
+                    cell_normals=True, point_normals=False,
+                    auto_orient_normals=True, inplace=True)
+                face_normals = np.asarray(surface.cell_data["Normals"])
+
+                # Acumular normales de caras en cada vértice de frontera
+                vert_normals = np.zeros((n_pts, 3))
+                vert_count = np.zeros(n_pts)
+
+                faces = surface.faces.reshape(-1, 4)  # [3, v0, v1, v2] por cara
+                for fi in range(surface.n_cells):
+                    v0, v1, v2 = faces[fi, 1], faces[fi, 2], faces[fi, 3]
+                    fn = face_normals[fi]
+
+                    for vi in [v0, v1, v2]:
+                        if is_boundary[vi]:
+                            vert_normals[vi] += fn
+                            vert_count[vi] += 1
+
+                # Normalizar y aplicar offset
+                mask = vert_count > 0
+                vert_normals[mask] /= np.linalg.norm(
+                    vert_normals[mask], axis=1, keepdims=True) + 1e-12
+
+                # Desplazar hacia adentro (opuesto a la normal)
+                pts[mask] -= vert_normals[mask] * tol
+
+                surface.points = pts
+                self._add_mesh_to_plotter(key)
+
+            self._prepared = True
+            self.plotter.render()
+
+            n_groups = len(self.surfaces)
+            self._update_status(
+                f"✓ Tolerancia de {tol} mm aplicada a {n_groups} grupos — "
+                f"[L] revertir — [E] exportar")
+
+        except Exception as e:
+            self._update_status(f"Error: {e}")
+            import traceback
+            traceback.print_exc()
+
+    # ═══════════════════════════════════════════════════════════════════
     # Exportación
     # ═══════════════════════════════════════════════════════════════════
 
@@ -662,13 +765,14 @@ class AquiferEditor:
 
         self.plotter.add_text(
             "[S] Seleccionar  [N/P] Navegar  [D+num] Destino  [G] Confirmar  "
-            "[T] Plano de corte  [F] Cortar  [Esc] Cancelar  "
-            "[C] Reset líneas  [E] Exportar",
+            "[T] Plano de corte  [F] Cortar  [L] Preparar impresión  "
+            "[Esc] Cancelar  [C] Reset líneas  [E] Exportar",
             position=(10, 30), font_size=7, color="grey")
 
         self.plotter.add_key_event("s", self._enter_select_mode)
         self.plotter.add_key_event("n", self._next_component)
         self.plotter.add_key_event("p", self._prev_component)
+        self.plotter.add_key_event("l", self._prepare_for_printing)
         self.plotter.add_key_event("d", self._enter_destination_mode)
         self.plotter.add_key_event("g", self._confirm_reassign)
         self.plotter.add_key_event("t", self._toggle_cut_plane)
