@@ -18,19 +18,6 @@ class AquiferGridM6:
 
         self.properties = {}
 
-    @classmethod
-    def from_subset(cls, nlay, nrow, ncol, x_edges, y_edges, z_edges, properties):
-        obj = cls.__new__(cls)
-        obj.model_ws   = None
-        obj.nlay       = nlay
-        obj.nrow       = nrow
-        obj.ncol       = ncol
-        obj.x_edges    = x_edges
-        obj.y_edges    = y_edges
-        obj.z_edges    = z_edges
-        obj.properties = properties
-        return obj
-
     def _check_loaded(self):
         if self.nlay is None:
             raise RuntimeError("Debes llamar load() antes de usar esta función.")
@@ -114,17 +101,3 @@ class AquiferGridM6:
         grid.cell_data["layer"] = k.astype(np.int32)
 
         return grid
-
-    @staticmethod
-    def split_grid_by_prop(grid, prop="k"):
-        scalars = grid.cell_data[prop]
-        unique_vals = np.unique(scalars[~np.isnan(scalars)])
-
-        segments = {}
-        for val in np.sort(unique_vals):
-            indices = np.where(scalars == val)[0]
-            if indices.size == 0:
-                continue
-            segments[val] = grid.extract_cells(indices)
-
-        return segments

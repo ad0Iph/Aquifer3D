@@ -1,16 +1,3 @@
-"""
-aquifer_editor.py — Editor interactivo de mallas de acuíferos.
-
-Funcionalidades:
-  1. Checkboxes de visibilidad por propiedad
-  2. Navegación por componentes conexos (S → 1-9 → N/P → D+num → G)
-  3. Plano de corte libre (T): rotar, mover, escalar, cortar (F)
-  4. Exportación (E)
-
-Uso:
-    python edit_model.py ../modelo --z-exag 10
-"""
-
 import numpy as np
 import pyvista as pv
 import matplotlib.pyplot as plt
@@ -23,12 +10,11 @@ except ImportError:
     HAS_REPAIR = False
 
 try:
-    import vtkmodules.vtkInteractionStyle as _vtk_style
-    _BaseStyle = _vtk_style.vtkInteractorStyleTrackballCamera
+    import vtkmodules.vtkInteractionStyle as vtk_style
+    BaseStyle = vtk_style.vtkInteractorStyleTrackballCamera
 except (ImportError, AttributeError):
     import vtk
-    _BaseStyle = vtk.vtkInteractorStyleTrackballCamera
-
+    BaseStyle = vtk.vtkInteractorStyleTrackballCamera
 
 def format_value(v):
     if v == 0:
@@ -38,8 +24,7 @@ def format_value(v):
     else:
         return f"{v:.4g}"
 
-
-class _CutPlaneStyle(_BaseStyle):
+class CutPlaneStyle(BaseStyle):
     """Redirige la rueda del mouse al plano de corte en vez de zoom."""
     def __init__(self, editor):
         super().__init__()
@@ -55,46 +40,51 @@ class _CutPlaneStyle(_BaseStyle):
 
 
 class AquiferEditor:
-
+    # Constantes de la ventana
     WINDOW_W = 1400
     WINDOW_H = 900
     DIM_OPACITY = 0.3
 
+    # Estados del editor
     MODE_VIEW = "view"
     MODE_SELECT = "select"
     MODE_BROWSE = "browse"
     MODE_DESTINATION = "dest"
 
     def __init__(self, aquifer, prop="k", z_exag=1.0, decimate=0.0, tolerance=0.15):
-        self.prop = prop
-        self.z_exag = z_exag
-        self.decimate = decimate
+        self.prop = prop # propiedad del aquifero a editar
+        self.z_exag = z_exag # exageracion vertical de la grilla
+        self.decimate = decimate # porcentaje de reducción de caras
         self.tolerance = tolerance  # mm de holgura por lado
 
-        # ── 1. Grid completo ────────────────────────────────────────
+        # Se carga la clase del aquifero y se construye el grid de pyvista
         self.grid = aquifer.build_grid(prop=prop, z_exag=z_exag)
 
-        # ── 2. Array de grupos ──────────────────────────────────────
+        # arreglo de ids de grupo por celda
         self.group_ids = self.grid.cell_data[prop].copy()
 
-        # ── 3. Superficies ──────────────────────────────────────────
+        # superficies por grupo 
         self.surfaces = {}
-        self._rebuild_all_surfaces()
+        self.rebuild_all_surfaces()
 
-        # ── 4. Estado visual ────────────────────────────────────────
+        # elementos de la escena: actores, visibilidad y colores por grupo
         self.actors = {}
         self.visible = {}
         self.colors = {}
 
         group_keys = sorted(self.surfaces.keys())
+        # numero de grupos
         n = len(group_keys)
+        # se asignan colores a cada grupo usando un colormap de matplotlib, tab10 si hay <=10 y tab20 en otro caso
         cmap = plt.get_cmap("tab10") if n <= 10 else plt.get_cmap("tab20")
 
         for idx, key in enumerate(group_keys):
+            # se mapean los grupos a colores del colormap, distribuidos uniformemente
             self.colors[key] = cmap(idx / max(n - 1, 1))[:3]
+            # se muestran todos los grupos por defecto
             self.visible[key] = True
 
-        # ── 5. Selección de componentes ─────────────────────────────
+        # Estado de selección y reasignación de componentes
         self.mode = self.MODE_VIEW
         self.source_group = None
         self.components = []
@@ -102,7 +92,7 @@ class AquiferEditor:
         self.target_group = None
         self._highlight_actor = None
 
-        # ── 6. Plano de corte libre (tecla T) ───────────────────────
+        # Plano de corte libre (T)
         self._cut_active = False
         self._cut_origin = None
         self._cut_rotation = np.eye(3)
@@ -116,41 +106,48 @@ class AquiferEditor:
         self._rot_step = 5.0
         self._original_style = None
 
-        # ── 7. Tolerancia para impresión (tecla L) ──────────────────
+        # Gap para preparación de impresión (L)
         self._prepared = False
-
-        # ── 7. Preparación para impresión (tecla P) ─────────────────
-        self._prepared = False
+        
         # Superficie del grid completo: solo caras exteriores.
         # Se usa para distinguir caras de frontera (entre grupos)
         # de caras exteriores (borde del modelo).
-        self._full_surface = self.grid.extract_surface(algorithm=None)
+        self._full_surface = self.grid.extract_surface()
 
         # ── 8. Plotter ──────────────────────────────────────────────
         self.plotter = None
         self._group_keys_ordered = group_keys
         self._status_actor = None
 
-    # ═══════════════════════════════════════════════════════════════════
-    # Superficies
-    # ═══════════════════════════════════════════════════════════════════
+    #####################################################################
+    ######################### Superficies ###############################                                
+    #####################################################################
 
-    def _rebuild_all_surfaces(self):
+    def rebuild_all_surfaces(self):
+        # se reconocen los grupos unicos en el array de ids, ignorando aquellos que son NaN (celdas sin grupo)
         unique_groups = np.unique(self.group_ids[~np.isnan(self.group_ids)])
+        # se limpia las superficies (dict) para construirlas desde cero
         self.surfaces.clear()
 
         for val in np.sort(unique_groups):
+            # se buscan todos los indices coincidentes con el valor del grupo actual
             indices = np.where(self.group_ids == val)[0]
+            # en caso de que no hayan se continua inmediatamente al siguiente grupo
             if indices.size == 0:
                 continue
+            # se extrae una subgrilla con solo las celdas de ese grupo
             sub = self.grid.extract_cells(indices)
-            surface = sub.extract_surface(algorithm=None).triangulate()
+            # se triangula de superficie de esa subgrulla
+            surface = sub.extract_surface().triangulate()
+            # en caso de que se deba decimar se repara la malla para evitar errores de topologia, luego se decima con el porcentaje indicado
             if self.decimate > 0 and HAS_REPAIR:
                 surface = repair_surface(surface, decimate=self.decimate,
                                          verbose=False)
+            # se guarda la superficie resultante en el diccionario de superficies, mapeada por el valor del grupo
             self.surfaces[val] = surface
 
-    def _compute_components(self, group_key):
+    def compute_components(self, group_key):
+        # Se utiliza una mascara para filtrar las celdas del grupo, luego se extrae un subgrilla con solo esas celdas
         group_mask = self.group_ids == group_key
         group_cell_indices = np.where(group_mask)[0]
         if group_cell_indices.size == 0:
@@ -165,7 +162,7 @@ class AquiferEditor:
             region_mask = region_ids == rid
             grid_cells = group_cell_indices[region_mask]
             comp_grid = connected.extract_cells(np.where(region_mask)[0])
-            comp_surface = comp_grid.extract_surface(algorithm=None).triangulate()
+            comp_surface = comp_grid.extract_surface().triangulate()
             components.append({
                 "grid_indices": grid_cells,
                 "surface": comp_surface,
@@ -174,11 +171,11 @@ class AquiferEditor:
         components.sort(key=lambda c: c["n_cells"], reverse=True)
         return components
 
-    # ═══════════════════════════════════════════════════════════════════
-    # Renderizado
-    # ═══════════════════════════════════════════════════════════════════
+    #####################################################################
+    ######################### Renderizado ###############################
+    #####################################################################
 
-    def _add_mesh_to_plotter(self, key):
+    def add_mesh_to_plotter(self, key):
         if key in self.actors:
             self.plotter.remove_actor(self.actors[key])
         surface = self.surfaces.get(key)
@@ -192,8 +189,8 @@ class AquiferEditor:
         actor.SetVisibility(self.visible.get(key, True))
         self.actors[key] = actor
 
-    def _refresh_all_actors(self):
-        self._rebuild_all_surfaces()
+    def refresh_all_actors(self):
+        self.rebuild_all_surfaces()
         for key in list(self.actors.keys()):
             if key not in self.surfaces:
                 self.plotter.remove_actor(self.actors.pop(key))
@@ -203,15 +200,15 @@ class AquiferEditor:
                 cmap = plt.get_cmap("tab10") if n <= 10 else plt.get_cmap("tab20")
                 self.colors[key] = cmap(len(self.colors) / max(n - 1, 1))[:3]
                 self.visible[key] = True
-            self._add_mesh_to_plotter(key)
+            self.add_mesh_to_plotter(key)
 
-    def _remove_highlight(self):
+    def remove_highlight(self):
         if self._highlight_actor is not None:
             self.plotter.remove_actor(self._highlight_actor)
             self._highlight_actor = None
 
-    def _highlight_component(self):
-        self._remove_highlight()
+    def highlight_component(self):
+        self.remove_highlight()
         if not self.components or self.component_idx >= len(self.components):
             return
         comp = self.components[self.component_idx]
@@ -223,84 +220,84 @@ class AquiferEditor:
             p.SetOpacity(0.7 if gkey == self.source_group else self.DIM_OPACITY)
         self.plotter.render()
 
-    def _restore_opacities(self):
+    def restore_opacities(self):
         for key, actor in self.actors.items():
             actor.GetProperty().SetOpacity(1.0)
         self.plotter.render()
 
-    # ═══════════════════════════════════════════════════════════════════
-    # Visibilidad
-    # ═══════════════════════════════════════════════════════════════════
+    #####################################################################
+    ######################### Visibilidad ###############################
+    #####################################################################
 
-    def _toggle_visibility(self, key, state):
+    def toggle_visibility(self, key, state):
         self.visible[key] = state
         if key in self.actors:
             self.actors[key].SetVisibility(state)
 
-    # ═══════════════════════════════════════════════════════════════════
-    # Selección y reasignación de componentes
-    # ═══════════════════════════════════════════════════════════════════
+    ######################################################################
+    ############## Selección y reasignación de componentes ###############
+    ######################################################################
 
-    def _enter_select_mode(self):
+    def enter_select_mode(self):
         if self.mode != self.MODE_VIEW:
-            self._cancel()
+            self.cancel()
             return
         self.mode = self.MODE_SELECT
         group_list = " | ".join(
             f"[{i+1}] {format_value(k)}"
             for i, k in enumerate(self._group_keys_ordered[:9]))
-        self._update_status(f"SELECCIÓN — Elige grupo fuente: {group_list}")
+        self.update_status(f"SELECCIÓN — Elige grupo fuente: {group_list}")
 
-    def _on_number_key(self, index):
+    def on_number_key(self, index):
         if self.mode == self.MODE_SELECT:
-            self._select_source_group(index)
+            self.select_source_group(index)
         elif self.mode == self.MODE_DESTINATION:
-            self._select_destination(index)
+            self.select_destination(index)
 
-    def _select_source_group(self, index):
+    def select_source_group(self, index):
         if index >= len(self._group_keys_ordered):
             return
         self.source_group = self._group_keys_ordered[index]
-        self._update_status("Calculando componentes...")
+        self.update_status("Calculando componentes...")
         self.plotter.render()
         try:
-            self.components = self._compute_components(self.source_group)
+            self.components = self.compute_components(self.source_group)
         except Exception as e:
-            self._update_status(f"Error: {e}")
+            self.update_status(f"Error: {e}")
             self.mode = self.MODE_VIEW
             return
         if not self.components:
-            self._update_status("Grupo sin celdas")
+            self.update_status("Grupo sin celdas")
             self.mode = self.MODE_VIEW
             return
         self.component_idx = 0
         self.mode = self.MODE_BROWSE
-        self._highlight_component()
-        self._show_browse_status()
+        self.highlight_component()
+        self.show_browse_status()
 
-    def _next_component(self):
+    def next_component(self):
         if self.mode != self.MODE_BROWSE or not self.components:
             return
         self.component_idx = (self.component_idx + 1) % len(self.components)
-        self._highlight_component()
-        self._show_browse_status()
+        self.highlight_component()
+        self.show_browse_status()
 
-    def _prev_component(self):
+    def prev_component(self):
         if self.mode != self.MODE_BROWSE or not self.components:
             return
         self.component_idx = (self.component_idx - 1) % len(self.components)
-        self._highlight_component()
-        self._show_browse_status()
+        self.highlight_component()
+        self.show_browse_status()
 
-    def _show_browse_status(self):
+    def show_browse_status(self):
         comp = self.components[self.component_idx]
         total = len(self.components)
-        self._update_status(
+        self.update_status(
             f"{self.prop}={format_value(self.source_group)} — "
             f"Componente {self.component_idx+1}/{total} ({comp['n_cells']} celdas) — "
             f"[N/P] navegar [D] destino [Esc] cancelar")
 
-    def _enter_destination_mode(self):
+    def enter_destination_mode(self):
         if self.mode != self.MODE_BROWSE:
             return
         self.mode = self.MODE_DESTINATION
@@ -308,25 +305,25 @@ class AquiferEditor:
             f"[{i+1}] {format_value(k)}"
             for i, k in enumerate(self._group_keys_ordered[:9])
             if k != self.source_group)
-        self._update_status(f"DESTINO — Elige grupo: {group_list}")
+        self.update_status(f"DESTINO — Elige grupo: {group_list}")
 
-    def _select_destination(self, index):
+    def select_destination(self, index):
         if index >= len(self._group_keys_ordered):
             return
         target = self._group_keys_ordered[index]
         if target == self.source_group:
-            self._update_status("No puedes elegir el mismo grupo")
+            self.update_status("No puedes elegir el mismo grupo")
             return
         self.target_group = target
         comp = self.components[self.component_idx]
-        self._update_status(
+        self.update_status(
             f"{format_value(self.source_group)} → {format_value(self.target_group)} "
             f"({comp['n_cells']} celdas) — [G] confirmar")
         self.mode = self.MODE_BROWSE
 
-    def _confirm_reassign(self):
+    def confirm_reassign(self):
         if self.mode != self.MODE_BROWSE or self.target_group is None:
-            self._update_status("Elige destino con [D] + número")
+            self.update_status("Elige destino con [D] + número")
             return
         if not self.components:
             return
@@ -345,28 +342,28 @@ class AquiferEditor:
                 self._group_keys_ordered.remove(source)
 
         self._remove_highlight()
-        self._restore_opacities()
+        self.restore_opacities()
         self.source_group = self.target_group = None
         self.components = []
         self.mode = self.MODE_VIEW
         self._refresh_all_actors()
-        self._update_status(
+        self.update_status(
             f"✓ {n} celdas: {format_value(source)} → {format_value(target)}")
 
-    def _cancel(self):
+    def cancel(self):
         self._remove_highlight()
-        self._restore_opacities()
+        self.restore_opacities()
         self.mode = self.MODE_VIEW
         self.source_group = self.target_group = None
         self.components = []
-        self._update_status(
+        self.update_status(
             f"{len(self._group_keys_ordered)} grupos — [S] seleccionar")
 
-    # ═══════════════════════════════════════════════════════════════════
-    # Plano de corte libre (tecla T)
-    # ═══════════════════════════════════════════════════════════════════
+    ######################################################################
+    ################# Plano de corte libre (tecla T) #####################
+    ######################################################################
 
-    def _get_cut_normal(self):
+    def get_cut_normal(self):
         return self._cut_rotation[:, 2].copy()
 
     def _rotate_cut_plane(self, axis, angle_deg):
@@ -380,18 +377,18 @@ class AquiferEditor:
             R = np.array([[c,-s,0],[s,c,0],[0,0,1]])
         self._cut_rotation = R @ self._cut_rotation
 
-    def _build_cut_plane_mesh(self):
+    def build_cut_plane_mesh(self):
         bounds = self.grid.bounds
         dx = bounds[1] - bounds[0]
         dy = bounds[3] - bounds[2]
         size = max(dx, dy) * 0.8 * self._cut_scale
-        normal = self._get_cut_normal()
+        normal = self.get_cut_normal()
         plane = pv.Plane(center=self._cut_origin, direction=normal,
                          i_size=size, j_size=size,
                          i_resolution=1, j_resolution=1)
         return plane, normal
 
-    def _update_cut_plane_visual(self):
+    def update_cut_plane_visual(self):
         if not self._cut_active:
             return
         if self._cut_actor is not None:
@@ -399,7 +396,7 @@ class AquiferEditor:
         if self._cut_border_actor is not None:
             self.plotter.remove_actor(self._cut_border_actor)
 
-        plane, _ = self._build_cut_plane_mesh()
+        plane, _ = self.build_cut_plane_mesh()
         self._cut_actor = self.plotter.add_mesh(
             plane, color="red", opacity=0.15,
             name="cut_plane", pickable=False)
@@ -411,7 +408,7 @@ class AquiferEditor:
             name="cut_border", pickable=False)
         self.plotter.render()
 
-    def _toggle_cut_plane(self):
+    def toggle_cut_plane(self):
         """Tecla T: activa/desactiva el plano de corte libre."""
         # Obtener interactor VTK
         iren = self.plotter.iren
@@ -433,7 +430,7 @@ class AquiferEditor:
             if self._original_style is not None:
                 vtk_iren.SetInteractorStyle(self._original_style)
                 self._original_style = None
-            self._update_status("Plano de corte desactivado")
+            self.update_status("Plano de corte desactivado")
         else:
             bounds = self.grid.bounds
             self._cut_origin = np.array([
@@ -448,21 +445,21 @@ class AquiferEditor:
             self._move_step = diag * 0.02
             self._cut_active = True
             self._original_style = vtk_iren.GetInteractorStyle()
-            vtk_iren.SetInteractorStyle(_CutPlaneStyle(self))
-            self._update_cut_plane_visual()
-            self._update_status(
+            vtk_iren.SetInteractorStyle(CutPlaneStyle(self))
+            self.update_cut_plane_visual()
+            self.update_status(
                 "PLANO — [Z/X/Y] eje rot. — Rueda: rotar — "
                 "Ctrl/Alt/Shift+rueda: mover Z/X/Y — "
                 "Ctrl+Shift+rueda: escalar — [F] cortar — [T] cerrar")
 
-    def _set_cut_rot_axis(self, axis):
+    def set_cut_rot_axis(self, axis):
         if not self._cut_active:
             return
         self._cut_rot_axis = axis
         names = {0: "X", 1: "Y", 2: "Z"}
-        self._update_status(f"Eje de rotación: {names[axis]}")
+        self.update_status(f"Eje de rotación: {names[axis]}")
 
-    def _on_wheel(self, direction):
+    def on_wheel(self, direction):
         iren = self.plotter.iren
         if hasattr(iren, 'interactor') and iren.interactor is not None:
             vtk_iren = iren.interactor
@@ -486,18 +483,18 @@ class AquiferEditor:
         else:
             self._rotate_cut_plane(self._cut_rot_axis,
                                    direction * self._rot_step)
-        self._update_cut_plane_visual()
+        self.update_cut_plane_visual()
 
-    def _execute_cut(self):
+    def execute_cut(self):
         """Tecla F: corta las celdas que el plano atraviesa."""
         if not self._cut_active:
-            self._update_status("Primero activa el plano con [T]")
+            self.update_status("Primero activa el plano con [T]")
             return
 
         try:
-            normal = self._get_cut_normal()
+            normal = self.get_cut_normal()
             origin = self._cut_origin.copy()
-            plane_mesh, _ = self._build_cut_plane_mesh()
+            plane_mesh, _ = self.build_cut_plane_mesh()
 
             plane_pts = np.asarray(plane_mesh.points)
             v_i = plane_pts[1] - plane_pts[0]
@@ -505,7 +502,7 @@ class AquiferEditor:
             len_i = np.linalg.norm(v_i)
             len_j = np.linalg.norm(v_j)
             if len_i == 0 or len_j == 0:
-                self._update_status("Plano degenerado")
+                self.update_status("Plano degenerado")
                 return
             u_i = v_i / len_i
             u_j = v_j / len_j
@@ -560,7 +557,7 @@ class AquiferEditor:
                       f"{n_sep} celdas separadas → grupo {new_key}")
 
             if not cut_any:
-                self._update_status("El plano no intersecta ninguna celda")
+                self.update_status("El plano no intersecta ninguna celda")
                 return
 
             self._refresh_all_actors()
@@ -602,16 +599,16 @@ class AquiferEditor:
             self.plotter.render()
             n_groups = len(np.unique(
                 self.group_ids[~np.isnan(self.group_ids)]))
-            self._update_status(
+            self.update_status(
                 f"✓ Corte #{self._cut_counter} — {n_groups} grupos — "
                 f"[S] navegar componentes — [F] cortar de nuevo")
 
         except Exception as e:
-            self._update_status(f"Error al cortar: {e}")
+            self.update_status(f"Error al cortar: {e}")
             import traceback
             traceback.print_exc()
 
-    def _clear_cut_lines(self):
+    def clear_cut_lines(self):
         for actor in self._cut_line_actors:
             self.plotter.remove_actor(actor)
         self._cut_line_actors.clear()
@@ -620,7 +617,7 @@ class AquiferEditor:
     # Preparación para impresión (tecla L)
     # ═══════════════════════════════════════════════════════════════════
 
-    def _prepare_for_printing(self):
+    def prepare_for_printing(self):
         """
         Tecla L: aplica tolerancia de holgura en las caras de frontera.
 
@@ -632,12 +629,12 @@ class AquiferEditor:
         if self._prepared:
             self._prepared = False
             self._refresh_all_actors()
-            self._update_status("Tolerancia revertida — superficies originales")
+            self.update_status("Tolerancia revertida — superficies originales")
             return
 
         try:
             tol = self.tolerance
-            self._update_status(f"Aplicando tolerancia de {tol} mm...")
+            self.update_status(f"Aplicando tolerancia de {tol} mm...")
             self.plotter.render()
 
             # Superficie exterior del grid completo (precalculada en __init__)
@@ -699,12 +696,12 @@ class AquiferEditor:
             self.plotter.render()
 
             n_groups = len(self.surfaces)
-            self._update_status(
+            self.update_status(
                 f"✓ Tolerancia de {tol} mm aplicada a {n_groups} grupos — "
                 f"[L] revertir — [E] exportar")
 
         except Exception as e:
-            self._update_status(f"Error: {e}")
+            self.update_status(f"Error: {e}")
             import traceback
             traceback.print_exc()
 
@@ -712,7 +709,7 @@ class AquiferEditor:
     # Exportación
     # ═══════════════════════════════════════════════════════════════════
 
-    def _export_visible(self):
+    def export_visible(self):
         out_dir = Path("export/editor")
         out_dir.mkdir(parents=True, exist_ok=True)
         exported = 0
@@ -727,20 +724,20 @@ class AquiferEditor:
             surface.save(str(out_path))
             print(f"  → {out_path}  ({surface.n_cells} caras)")
             exported += 1
-        self._update_status(f"Exportados {exported} archivos en {out_dir}/")
+        self.update_status(f"Exportados {exported} archivos en {out_dir}/")
 
     # ═══════════════════════════════════════════════════════════════════
     # UI
     # ═══════════════════════════════════════════════════════════════════
 
-    def _update_status(self, text):
+    def update_status(self, text):
         if self._status_actor is not None:
             self.plotter.remove_actor(self._status_actor)
         self._status_actor = self.plotter.add_text(
             text, position=(10, 8), font_size=9,
             color="black", name="status_text")
 
-    def _setup_ui(self):
+    def setup_ui(self):
         checkbox_size = 22
         row_height = checkbox_size + 10
         y_start = self.WINDOW_H - 50
@@ -750,7 +747,7 @@ class AquiferEditor:
             y_pos = y_start - idx * row_height
 
             def make_vis_cb(k):
-                def cb(state): self._toggle_visibility(k, state)
+                def cb(state): self.toggle_visibility(k, state)
                 return cb
 
             self.plotter.add_checkbox_button_widget(
@@ -769,28 +766,28 @@ class AquiferEditor:
             "[Esc] Cancelar  [C] Reset líneas  [E] Exportar",
             position=(10, 30), font_size=7, color="grey")
 
-        self.plotter.add_key_event("s", self._enter_select_mode)
-        self.plotter.add_key_event("n", self._next_component)
-        self.plotter.add_key_event("p", self._prev_component)
-        self.plotter.add_key_event("l", self._prepare_for_printing)
-        self.plotter.add_key_event("d", self._enter_destination_mode)
-        self.plotter.add_key_event("g", self._confirm_reassign)
-        self.plotter.add_key_event("t", self._toggle_cut_plane)
-        self.plotter.add_key_event("f", self._execute_cut)
-        self.plotter.add_key_event("z", lambda: self._set_cut_rot_axis(2))
-        self.plotter.add_key_event("x", lambda: self._set_cut_rot_axis(0))
-        self.plotter.add_key_event("y", lambda: self._set_cut_rot_axis(1))
-        self.plotter.add_key_event("e", self._export_visible)
-        self.plotter.add_key_event("Escape", self._cancel)
-        self.plotter.add_key_event("c", self._clear_cut_lines)
+        self.plotter.add_key_event("s", self.enter_select_mode)
+        self.plotter.add_key_event("n", self.next_component)
+        self.plotter.add_key_event("p", self.prev_component)
+        self.plotter.add_key_event("l", self.prepare_for_printing)
+        self.plotter.add_key_event("d", self.enter_destination_mode)
+        self.plotter.add_key_event("g", self.confirm_reassign)
+        self.plotter.add_key_event("t", self.toggle_cut_plane)
+        self.plotter.add_key_event("f", self.execute_cut)
+        self.plotter.add_key_event("z", lambda: self.set_cut_rot_axis(2))
+        self.plotter.add_key_event("x", lambda: self.set_cut_rot_axis(0))
+        self.plotter.add_key_event("y", lambda: self.set_cut_rot_axis(1))
+        self.plotter.add_key_event("e", self.export_visible)
+        self.plotter.add_key_event("Escape", self.cancel)
+        self.plotter.add_key_event("c", self.clear_cut_lines)
 
         for i in range(min(9, len(self._group_keys_ordered))):
             def make_key_cb(idx):
-                def cb(): self._on_number_key(idx)
+                def cb(): self.on_number_key(idx)
                 return cb
             self.plotter.add_key_event(str(i + 1), make_key_cb(i))
 
-        self._update_status(
+        self.update_status(
             f"{len(self._group_keys_ordered)} grupos — "
             f"[S] seleccionar  [T] plano de corte")
 
@@ -803,7 +800,7 @@ class AquiferEditor:
         self.plotter.background_color = "white"
         for key in self._group_keys_ordered:
             self._add_mesh_to_plotter(key)
-        self._setup_ui()
+        self.setup_ui()
         self.plotter.add_axes(xlabel="X (m)", ylabel="Y (m)", zlabel="Z (m)")
         n = len(self._group_keys_ordered)
         self.plotter.show(title=f"Aquifer Editor — {self.prop}: {n} grupos")
