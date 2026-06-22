@@ -25,18 +25,17 @@ def format_value(v):
         return f"{v:.4g}"
 
 class CutPlaneStyle(BaseStyle):
-    """Redirige la rueda del mouse al plano de corte en vez de zoom."""
     def __init__(self, editor):
         super().__init__()
         self._editor = editor
-        self.AddObserver("MouseWheelForwardEvent", self._fwd)
-        self.AddObserver("MouseWheelBackwardEvent", self._bwd)
+        self.AddObserver("MouseWheelForwardEvent", self.fwd)
+        self.AddObserver("MouseWheelBackwardEvent", self.bwd)
 
-    def _fwd(self, obj, event):
-        self._editor._on_wheel(1)
+    def fwd(self, obj, event):
+        self._editor.on_wheel(1)
 
-    def _bwd(self, obj, event):
-        self._editor._on_wheel(-1)
+    def bwd(self, obj, event):
+        self._editor.on_wheel(-1)
 
 
 class AquiferEditor:
@@ -140,9 +139,7 @@ class AquiferEditor:
             # se triangula de superficie de esa subgrulla
             surface = sub.extract_surface().triangulate()
             # en caso de que se deba decimar se repara la malla para evitar errores de topologia, luego se decima con el porcentaje indicado
-            if self.decimate > 0 and HAS_REPAIR:
-                surface = repair_surface(surface, decimate=self.decimate,
-                                         verbose=False)
+            surface = repair_surface(surface, decimate=self.decimate, verbose=False)
             # se guarda la superficie resultante en el diccionario de superficies, mapeada por el valor del grupo
             self.surfaces[val] = surface
 
@@ -185,7 +182,8 @@ class AquiferEditor:
         actor = self.plotter.add_mesh(
             surface, color=self.colors.get(key, (0.5, 0.5, 0.5)),
             show_edges=False, opacity=1.0,
-            name=f"group_{format_value(key)}")
+            name=f"group_{format_value(key)}",
+            reset_camera=False)
         actor.SetVisibility(self.visible.get(key, True))
         self.actors[key] = actor
 
@@ -214,7 +212,7 @@ class AquiferEditor:
         comp = self.components[self.component_idx]
         self._highlight_actor = self.plotter.add_mesh(
             comp["surface"], color="white", style="wireframe",
-            line_width=1.5, opacity=1.0, name="highlight", pickable=False)
+            line_width=1.5, opacity=1.0, name="highlight", pickable=False, reset_camera=False)
         for gkey, actor in self.actors.items():
             p = actor.GetProperty()
             p.SetOpacity(0.7 if gkey == self.source_group else self.DIM_OPACITY)
@@ -341,17 +339,17 @@ class AquiferEditor:
             if source in self._group_keys_ordered:
                 self._group_keys_ordered.remove(source)
 
-        self._remove_highlight()
+        self.remove_highlight()
         self.restore_opacities()
         self.source_group = self.target_group = None
         self.components = []
         self.mode = self.MODE_VIEW
-        self._refresh_all_actors()
+        self.refresh_all_actors()
         self.update_status(
             f"✓ {n} celdas: {format_value(source)} → {format_value(target)}")
 
     def cancel(self):
-        self._remove_highlight()
+        self.remove_highlight()
         self.restore_opacities()
         self.mode = self.MODE_VIEW
         self.source_group = self.target_group = None
@@ -366,7 +364,7 @@ class AquiferEditor:
     def get_cut_normal(self):
         return self._cut_rotation[:, 2].copy()
 
-    def _rotate_cut_plane(self, axis, angle_deg):
+    def rotate_cut_plane(self, axis, angle_deg):
         angle = np.radians(angle_deg)
         c, s = np.cos(angle), np.sin(angle)
         if axis == 0:
@@ -399,13 +397,13 @@ class AquiferEditor:
         plane, _ = self.build_cut_plane_mesh()
         self._cut_actor = self.plotter.add_mesh(
             plane, color="red", opacity=0.15,
-            name="cut_plane", pickable=False)
+            name="cut_plane", pickable=False, reset_camera=False)
         edges = plane.extract_feature_edges(
             boundary_edges=True, feature_edges=False,
             manifold_edges=False, non_manifold_edges=False)
         self._cut_border_actor = self.plotter.add_mesh(
             edges, color="red", line_width=2.0,
-            name="cut_border", pickable=False)
+            name="cut_border", pickable=False, reset_camera=False)
         self.plotter.render()
 
     def toggle_cut_plane(self):
@@ -481,7 +479,7 @@ class AquiferEditor:
         elif shift:
             self._cut_origin[1] += direction * self._move_step
         else:
-            self._rotate_cut_plane(self._cut_rot_axis,
+            self.rotate_cut_plane(self._cut_rot_axis,
                                    direction * self._rot_step)
         self.update_cut_plane_visual()
 
@@ -560,7 +558,7 @@ class AquiferEditor:
                 self.update_status("El plano no intersecta ninguna celda")
                 return
 
-            self._refresh_all_actors()
+            self.refresh_all_actors()
             cam.position = cam_state[0]
             cam.focal_point = cam_state[1]
             cam.up = cam_state[2]
@@ -591,7 +589,7 @@ class AquiferEditor:
                         actor = self.plotter.add_mesh(
                             clipped, color="red", line_width=3.0,
                             name=f"cut_{self._cut_counter}_{id(surface)}",
-                            pickable=False)
+                            pickable=False, reset_camera=False)
                         self._cut_line_actors.append(actor)
                 except Exception:
                     pass
@@ -618,17 +616,9 @@ class AquiferEditor:
     # ═══════════════════════════════════════════════════════════════════
 
     def prepare_for_printing(self):
-        """
-        Tecla L: aplica tolerancia de holgura en las caras de frontera.
-
-        Identifica vértices de frontera (donde dos piezas se tocan)
-        comparando la superficie de cada grupo con la superficie del
-        grid completo. Vértices que NO están en la superficie del grid
-        completo son de frontera y se desplazan hacia adentro.
-        """
         if self._prepared:
             self._prepared = False
-            self._refresh_all_actors()
+            self.refresh_all_actors()
             self.update_status("Tolerancia revertida — superficies originales")
             return
 
@@ -690,7 +680,7 @@ class AquiferEditor:
                 pts[mask] -= vert_normals[mask] * tol
 
                 surface.points = pts
-                self._add_mesh_to_plotter(key)
+                self.add_mesh_to_plotter(key)
 
             self._prepared = True
             self.plotter.render()
@@ -799,8 +789,24 @@ class AquiferEditor:
         self.plotter = pv.Plotter(window_size=[self.WINDOW_W, self.WINDOW_H])
         self.plotter.background_color = "white"
         for key in self._group_keys_ordered:
-            self._add_mesh_to_plotter(key)
+            self.add_mesh_to_plotter(key)
         self.setup_ui()
         self.plotter.add_axes(xlabel="X (m)", ylabel="Y (m)", zlabel="Z (m)")
+
+        iren = self.plotter.iren
+        if hasattr(iren, 'interactor') and iren.interactor is not None:
+            vtk_iren = iren.interactor
+        elif hasattr(iren, '_iren'):
+            vtk_iren = iren._iren
+        else:
+            vtk_iren = iren
+
+        def block_exit_keys(obj, event):
+            key = vtk_iren.GetKeySym()
+            if key and key.lower() in ('e', 'q'):
+                vtk_iren.SetKeyCode('\0')
+
+        vtk_iren.AddObserver('CharEvent', block_exit_keys, 1.0)
+
         n = len(self._group_keys_ordered)
         self.plotter.show(title=f"Aquifer Editor — {self.prop}: {n} grupos")
