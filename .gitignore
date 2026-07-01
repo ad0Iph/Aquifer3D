@@ -17,6 +17,7 @@ cgal_repair/build/
 *.vtk
 *.obj
 *.ply
+*.3mf
 
 # Cache python
 __pycache__/
