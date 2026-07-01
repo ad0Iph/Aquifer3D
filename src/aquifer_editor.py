@@ -25,6 +25,7 @@ def format_value(v):
         return f"{v:.4g}"
 
 class CutPlaneStyle(BaseStyle):
+    """Redirige la rueda del mouse al plano de corte en vez de zoom."""
     def __init__(self, editor):
         super().__init__()
         self._editor = editor
@@ -50,12 +51,12 @@ class AquiferEditor:
     MODE_BROWSE = "browse"
     MODE_DESTINATION = "dest"
 
-    def __init__(self, aquifer, prop="k", z_exag=1.0, decimate=0.0, tolerance=0.15):
+    def __init__(self, aquifer, prop="k", z_exag=1.0, decimate=0.0, tolerance=0.15, cmap_name=None):
         self.prop = prop # propiedad del aquifero a editar
         self.z_exag = z_exag # exageracion vertical de la grilla
         self.decimate = decimate # porcentaje de reducción de caras
         self.tolerance = tolerance  # mm de holgura por lado
-
+        self.cmap_name = cmap_name  # nombre del colormap de matplotlib
         # Se carga la clase del aquifero y se construye el grid de pyvista
         self.grid = aquifer.build_grid(prop=prop, z_exag=z_exag)
 
@@ -75,7 +76,10 @@ class AquiferEditor:
         # numero de grupos
         n = len(group_keys)
         # se asignan colores a cada grupo usando un colormap de matplotlib, tab10 si hay <=10 y tab20 en otro caso
-        cmap = plt.get_cmap("tab10") if n <= 10 else plt.get_cmap("tab20")
+        if self.cmap_name:
+            cmap = plt.get_cmap(self.cmap_name)
+        else:
+            cmap = plt.get_cmap("tab10") if n <= 10 else plt.get_cmap("tab20")
 
         for idx, key in enumerate(group_keys):
             # se mapean los grupos a colores del colormap, distribuidos uniformemente
@@ -138,8 +142,10 @@ class AquiferEditor:
             sub = self.grid.extract_cells(indices)
             # se triangula de superficie de esa subgrulla
             surface = sub.extract_surface().triangulate()
-            # en caso de que se deba decimar se repara la malla para evitar errores de topologia, luego se decima con el porcentaje indicado
-            surface = repair_surface(surface, decimate=self.decimate, verbose=False)
+            # se repara la malla y opcionalmente se decima
+            if HAS_REPAIR:
+                surface = repair_surface(surface, decimate=self.decimate,
+                                         verbose=False)
             # se guarda la superficie resultante en el diccionario de superficies, mapeada por el valor del grupo
             self.surfaces[val] = surface
 
@@ -182,8 +188,7 @@ class AquiferEditor:
         actor = self.plotter.add_mesh(
             surface, color=self.colors.get(key, (0.5, 0.5, 0.5)),
             show_edges=False, opacity=1.0,
-            name=f"group_{format_value(key)}",
-            reset_camera=False)
+            name=f"group_{format_value(key)}")
         actor.SetVisibility(self.visible.get(key, True))
         self.actors[key] = actor
 
@@ -212,7 +217,7 @@ class AquiferEditor:
         comp = self.components[self.component_idx]
         self._highlight_actor = self.plotter.add_mesh(
             comp["surface"], color="white", style="wireframe",
-            line_width=1.5, opacity=1.0, name="highlight", pickable=False, reset_camera=False)
+            line_width=1.5, opacity=1.0, name="highlight", pickable=False)
         for gkey, actor in self.actors.items():
             p = actor.GetProperty()
             p.SetOpacity(0.7 if gkey == self.source_group else self.DIM_OPACITY)
@@ -397,13 +402,13 @@ class AquiferEditor:
         plane, _ = self.build_cut_plane_mesh()
         self._cut_actor = self.plotter.add_mesh(
             plane, color="red", opacity=0.15,
-            name="cut_plane", pickable=False, reset_camera=False)
+            name="cut_plane", pickable=False)
         edges = plane.extract_feature_edges(
             boundary_edges=True, feature_edges=False,
             manifold_edges=False, non_manifold_edges=False)
         self._cut_border_actor = self.plotter.add_mesh(
             edges, color="red", line_width=2.0,
-            name="cut_border", pickable=False, reset_camera=False)
+            name="cut_border", pickable=False)
         self.plotter.render()
 
     def toggle_cut_plane(self):
@@ -443,7 +448,9 @@ class AquiferEditor:
             self._move_step = diag * 0.02
             self._cut_active = True
             self._original_style = vtk_iren.GetInteractorStyle()
-            vtk_iren.SetInteractorStyle(CutPlaneStyle(self))
+            cut_style = CutPlaneStyle(self)
+            cut_style.SetDefaultRenderer(self.plotter.renderer)
+            vtk_iren.SetInteractorStyle(cut_style)
             self.update_cut_plane_visual()
             self.update_status(
                 "PLANO — [Z/X/Y] eje rot. — Rueda: rotar — "
@@ -527,9 +534,11 @@ class AquiferEditor:
             cut_any = False
             self._cut_counter += 1
 
-            cam = self.plotter.camera
-            cam_state = (cam.position, cam.focal_point,
-                         cam.up, cam.clipping_range)
+            # Guardar cámara como tuplas inmutables
+            cam_pos = tuple(self.plotter.camera.position)
+            cam_focal = tuple(self.plotter.camera.focal_point)
+            cam_up = tuple(self.plotter.camera.up)
+            cam_clip = tuple(self.plotter.camera.clipping_range)
 
             for key in list(self._group_keys_ordered):
                 if not self.visible.get(key, True):
@@ -543,26 +552,18 @@ class AquiferEditor:
                     continue
 
                 cut_any = True
-                new_key = -(self._cut_counter * 100
-                            + len(self._group_keys_ordered))
-                self.group_ids[to_separate] = float(new_key)
-
-                self._group_keys_ordered.append(new_key)
-                self.colors[new_key] = self.colors[key]
-                self.visible[new_key] = True
+                # Asignar NaN: rebuild_all_surfaces ignora NaN,
+                # así las celdas cortadas desaparecen de la visualización
+                self.group_ids[to_separate] = np.nan
 
                 print(f"  Cortado {format_value(key)}: "
-                      f"{n_sep} celdas separadas → grupo {new_key}")
+                      f"{n_sep} celdas eliminadas")
 
             if not cut_any:
                 self.update_status("El plano no intersecta ninguna celda")
                 return
 
             self.refresh_all_actors()
-            cam.position = cam_state[0]
-            cam.focal_point = cam_state[1]
-            cam.up = cam_state[2]
-            cam.clipping_range = cam_state[3]
 
             # Línea roja recortada al rectángulo
             margin = max(len_i, len_j) * 0.01
@@ -589,11 +590,16 @@ class AquiferEditor:
                         actor = self.plotter.add_mesh(
                             clipped, color="red", line_width=3.0,
                             name=f"cut_{self._cut_counter}_{id(surface)}",
-                            pickable=False, reset_camera=False)
+                            pickable=False)
                         self._cut_line_actors.append(actor)
                 except Exception:
                     pass
 
+            # Restaurar cámara DESPUÉS de todo (refresh + líneas + render)
+            self.plotter.camera.position = cam_pos
+            self.plotter.camera.focal_point = cam_focal
+            self.plotter.camera.up = cam_up
+            self.plotter.camera.clipping_range = cam_clip
             self.plotter.render()
             n_groups = len(np.unique(
                 self.group_ids[~np.isnan(self.group_ids)]))
@@ -616,6 +622,14 @@ class AquiferEditor:
     # ═══════════════════════════════════════════════════════════════════
 
     def prepare_for_printing(self):
+        """
+        Tecla L: aplica tolerancia de holgura en las caras de frontera.
+
+        Identifica vértices de frontera (donde dos piezas se tocan)
+        comparando la superficie de cada grupo con la superficie del
+        grid completo. Vértices que NO están en la superficie del grid
+        completo son de frontera y se desplazan hacia adentro.
+        """
         if self._prepared:
             self._prepared = False
             self.refresh_all_actors()
@@ -671,10 +685,19 @@ class AquiferEditor:
                             vert_normals[vi] += fn
                             vert_count[vi] += 1
 
-                # Normalizar y aplicar offset
+                # Normalizar y aplicar offset SOLO en X e Y
+                # Se anula la componente Z para que las piezas no se
+                # separen verticalmente (mantienen contacto en Z)
                 mask = vert_count > 0
-                vert_normals[mask] /= np.linalg.norm(
-                    vert_normals[mask], axis=1, keepdims=True) + 1e-12
+                vert_normals[mask, 2] = 0.0  # Sin offset en Z
+                norms = np.linalg.norm(vert_normals[mask], axis=1, keepdims=True)
+                # Evitar dividir por cero (vértices cuya normal era puramente Z)
+                valid = norms.ravel() > 1e-12
+                vert_normals[mask] = np.where(
+                    valid[:, None],
+                    vert_normals[mask] / (norms + 1e-12),
+                    0.0
+                )
 
                 # Desplazar hacia adentro (opuesto a la normal)
                 pts[mask] -= vert_normals[mask] * tol
@@ -700,8 +723,12 @@ class AquiferEditor:
     # ═══════════════════════════════════════════════════════════════════
 
     def export_visible(self):
+        """Tecla E: exporta cada malla visible como un archivo 3MF separado."""
+        import trimesh
+
         out_dir = Path("export/editor")
         out_dir.mkdir(parents=True, exist_ok=True)
+
         exported = 0
         for key in self._group_keys_ordered:
             if not self.visible.get(key, False):
@@ -709,12 +736,27 @@ class AquiferEditor:
             surface = self.surfaces.get(key)
             if surface is None or surface.n_cells == 0:
                 continue
-            fname = f"{self.prop}_{format_value(key)}.ply"
+
+            verts = np.asarray(surface.points)
+            faces = surface.faces.reshape(-1, 4)[:, 1:4]
+
+            rgb = self.colors.get(key, (0.5, 0.5, 0.5))
+            rgba = [int(rgb[0]*255), int(rgb[1]*255),
+                    int(rgb[2]*255), 255]
+            face_colors = np.tile(rgba, (len(faces), 1))
+
+            mesh = trimesh.Trimesh(
+                vertices=verts, faces=faces,
+                face_colors=face_colors,
+            )
+
+            fname = f"{self.prop}_{format_value(key)}.3mf"
             out_path = out_dir / fname
-            surface.save(str(out_path))
+            mesh.export(str(out_path), file_type="3mf")
             print(f"  → {out_path}  ({surface.n_cells} caras)")
             exported += 1
-        self.update_status(f"Exportados {exported} archivos en {out_dir}/")
+
+        self.update_status(f"Exportados {exported} archivos 3MF en {out_dir}/")
 
     # ═══════════════════════════════════════════════════════════════════
     # UI
@@ -793,6 +835,10 @@ class AquiferEditor:
         self.setup_ui()
         self.plotter.add_axes(xlabel="X (m)", ylabel="Y (m)", zlabel="Z (m)")
 
+        # Bloquear las teclas 'e' y 'q' que VTK usa para cerrar.
+        # RemoveObservers('ExitEvent') no basta porque OnChar del
+        # interactor style llama ExitCallback antes del ExitEvent.
+        # Interceptamos en CharEvent y neutralizamos el keycode.
         iren = self.plotter.iren
         if hasattr(iren, 'interactor') and iren.interactor is not None:
             vtk_iren = iren.interactor
@@ -803,7 +849,7 @@ class AquiferEditor:
 
         def block_exit_keys(obj, event):
             key = vtk_iren.GetKeySym()
-            if key and key.lower() in ('e', 'q'):
+            if key and key.lower() in ('e', 'q', 'f'):
                 vtk_iren.SetKeyCode('\0')
 
         vtk_iren.AddObserver('CharEvent', block_exit_keys, 1.0)

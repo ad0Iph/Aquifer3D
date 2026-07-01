@@ -12,6 +12,9 @@ if __name__ == "__main__":
     parser.add_argument("--tolerance",       type=float, default=0.15,
                         help="Holgura en mm por lado para impresión 3D "
                              "(default: 0.15mm, gap total = 0.30mm)")
+    parser.add_argument("--cmap", type=str, default=None,
+                         help="Colormap de matplotlib (ejemplo: viridis, Set1, "
+                         "Paired, Dark2, Pastel1, tab20, terrain)")
 
     args = parser.parse_args()
 
@@ -22,5 +25,6 @@ if __name__ == "__main__":
         aquifer, prop=args.prop, z_exag=args.z_exag,
         decimate=args.simplification,
         tolerance=args.tolerance,
+        cmap_name=args.cmap
     )
     editor.show()
