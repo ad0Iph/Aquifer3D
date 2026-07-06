@@ -9,6 +9,7 @@ class Selection:
     MODE_DESTINATION = "dest"
 
     def enter_select_mode(self):
+        """Inicia el modo de selección de grupo fuente"""
         if self.mode != self.MODE_VIEW:
             self.cancel()
             return
@@ -19,12 +20,14 @@ class Selection:
         self.update_status(f"SELECCIÓN — Elige grupo fuente: {group_list}")
 
     def on_number_key(self, index):
+        """Maneja la selección de grupo o destino"""
         if self.mode == self.MODE_SELECT:
             self.select_source_group(index)
         elif self.mode == self.MODE_DESTINATION:
             self.select_destination(index)
 
     def select_source_group(self, index):
+        """Selecciona el grupo fuente y calcula sus componentes conexos"""
         if index >= len(self._group_keys_ordered):
             return
         self.source_group = self._group_keys_ordered[index]
@@ -46,6 +49,7 @@ class Selection:
         self.show_browse_status()
 
     def next_component(self):
+        """Avanza al siguiente componente conexo en el modo browse"""
         if self.mode != self.MODE_BROWSE or not self.components:
             return
         self.component_idx = (self.component_idx + 1) % len(self.components)
@@ -53,6 +57,7 @@ class Selection:
         self.show_browse_status()
 
     def prev_component(self):
+        """Avanza al componente conexo previo en el modo browse"""
         if self.mode != self.MODE_BROWSE or not self.components:
             return
         self.component_idx = (self.component_idx - 1) % len(self.components)
@@ -60,6 +65,7 @@ class Selection:
         self.show_browse_status()
 
     def show_browse_status(self):
+        """Muestra el estado actual del componente seleccionado en modo browse"""
         comp = self.components[self.component_idx]
         total = len(self.components)
         self.update_status(
@@ -68,6 +74,7 @@ class Selection:
             f"[N/P] navegar [D] destino [Esc] cancelar")
 
     def enter_destination_mode(self):
+        """Inicia el modo de selección de grupo destino"""
         if self.mode != self.MODE_BROWSE:
             return
         self.mode = self.MODE_DESTINATION
@@ -78,6 +85,7 @@ class Selection:
         self.update_status(f"DESTINO — Elige grupo: {group_list}")
 
     def select_destination(self, index):
+        """Selecciona el grupo destino para reasignar el componente actual"""
         if index >= len(self._group_keys_ordered):
             return
         target = self._group_keys_ordered[index]
@@ -92,6 +100,7 @@ class Selection:
         self.mode = self.MODE_BROWSE
 
     def confirm_reassign(self):
+        """Reasigna el componente seleccionado al grupo destino"""
         if self.mode != self.MODE_BROWSE or self.target_group is None:
             self.update_status("Elige destino con [D] + número")
             return
@@ -121,6 +130,7 @@ class Selection:
             f"✓ {n} celdas: {format_value(source)} → {format_value(target)}")
 
     def cancel(self):
+        """Cancela la selección o reasignación en curso, vuelve al modo view"""
         self.remove_highlight()
         self.restore_opacities()
         self.mode = self.MODE_VIEW

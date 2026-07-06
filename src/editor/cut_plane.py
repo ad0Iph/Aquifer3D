@@ -3,10 +3,20 @@ import pyvista as pv
 from .utils import CutPlaneStyle, format_value
 
 class CutPlane:
+    def get_vtk_interactor(self):
+        iren = self.plotter.iren
+        if hasattr(iren, 'interactor') and iren.interactor is not None:
+            return iren.interactor
+        elif hasattr(iren, '_iren'):
+            return iren._iren
+        return iren
+
     def get_cut_normal(self):
+        """Devuelve el vector normal del plano de corte en coordenadas globales"""
         return self._cut_rotation[:, 2].copy()
 
     def rotate_cut_plane(self, axis, angle_deg):
+        """Rota el plano de corte alrededor del eje especificado (0=X, 1=Y, 2=Z)"""
         angle = np.radians(angle_deg)
         c, s = np.cos(angle), np.sin(angle)
         if axis == 0:
@@ -18,6 +28,7 @@ class CutPlane:
         self._cut_rotation = R @ self._cut_rotation
 
     def build_cut_plane_mesh(self):
+        """Construye un mesh de PyVista representando el plano de corte"""
         bounds = self.grid.bounds
         dx = bounds[1] - bounds[0]
         dy = bounds[3] - bounds[2]
@@ -40,6 +51,7 @@ class CutPlane:
         return plane, normal
 
     def update_cut_plane_visual(self):
+        """Actualiza la visualización del plano de corte en la escena"""
         if not self._cut_active:
             return
         if self._cut_actor is not None:
@@ -61,14 +73,23 @@ class CutPlane:
             reset_camera=False)
         self.plotter.render()
 
+    def track_key_press(self, obj, event):
+        """Registra la tecla presionada (para rotar manteniendo Z/X/Y)."""
+        vtk_iren = self.get_vtk_interactor()
+        key = vtk_iren.GetKeySym()
+        if key:
+            self._keys_down.add(key.lower())
+
+    def track_key_release(self, obj, event):
+        """Elimina la tecla del registro al soltarla."""
+        vtk_iren = self.get_vtk_interactor()
+        key = vtk_iren.GetKeySym()
+        if key:
+            self._keys_down.discard(key.lower())
+
     def toggle_cut_plane(self):
-        iren = self.plotter.iren
-        if hasattr(iren, 'interactor') and iren.interactor is not None:
-            vtk_iren = iren.interactor
-        elif hasattr(iren, '_iren'):
-            vtk_iren = iren._iren
-        else:
-            vtk_iren = iren
+        """Activa o desactiva el modo de plano de corte libre."""
+        vtk_iren = self.get_vtk_interactor()
 
         if self._cut_active:
             if self._cut_actor is not None:
@@ -81,6 +102,11 @@ class CutPlane:
             if self._original_style is not None:
                 vtk_iren.SetInteractorStyle(self._original_style)
                 self._original_style = None
+            # Remover observers de teclado
+            for obs_id in self._key_observers:
+                vtk_iren.RemoveObserver(obs_id)
+            self._key_observers = []
+            self._keys_down.clear()
             self.update_status("Plano de corte desactivado")
         else:
             bounds = self.grid.bounds
@@ -89,7 +115,6 @@ class CutPlane:
                 (bounds[4]+bounds[5])/2])
             self._cut_rotation = np.eye(3)
             self._cut_scale = 1.0
-            self._cut_rot_axis = 2
             diag = np.sqrt((bounds[1]-bounds[0])**2 +
                            (bounds[3]-bounds[2])**2 +
                            (bounds[5]-bounds[4])**2)
@@ -99,27 +124,25 @@ class CutPlane:
             cut_style = CutPlaneStyle(self)
             cut_style.SetDefaultRenderer(self.plotter.renderer)
             vtk_iren.SetInteractorStyle(cut_style)
+
+            # Observers para rastrear teclas mantenidas (Z/X/Y + rueda)
+            self._keys_down = set()
+            self._key_observers = [
+                vtk_iren.AddObserver("KeyPressEvent",
+                                     self.track_key_press, 1.0),
+                vtk_iren.AddObserver("KeyReleaseEvent",
+                                     self.track_key_release, 1.0),
+            ]
+
             self.update_cut_plane_visual()
             self.update_status(
-                "PLANO — [Z/X/Y] eje rot. — Rueda: rotar — "
+                "PLANO — Mantener Z/X/Y + rueda: rotar — "
                 "Ctrl/Alt/Shift+rueda: mover Z/X/Y — "
                 "Ctrl+Shift+rueda: escalar — [F] cortar — [T] cerrar")
 
-    def set_cut_rot_axis(self, axis):
-        if not self._cut_active:
-            return
-        self._cut_rot_axis = axis
-        names = {0: "X", 1: "Y", 2: "Z"}
-        self.update_status(f"Eje de rotación: {names[axis]}")
-
     def on_wheel(self, direction):
-        iren = self.plotter.iren
-        if hasattr(iren, 'interactor') and iren.interactor is not None:
-            vtk_iren = iren.interactor
-        elif hasattr(iren, '_iren'):
-            vtk_iren = iren._iren
-        else:
-            vtk_iren = iren
+        """Mueve o rota el plano de corte según la tecla mantenida y la rueda del mouse."""
+        vtk_iren = self.get_vtk_interactor()
 
         ctrl = vtk_iren.GetControlKey()
         shift = vtk_iren.GetShiftKey()
@@ -133,12 +156,19 @@ class CutPlane:
             self._cut_origin[0] += direction * self._move_step
         elif shift:
             self._cut_origin[1] += direction * self._move_step
+        elif 'z' in self._keys_down:
+            self.rotate_cut_plane(2, direction * self._rot_step)
+        elif 'x' in self._keys_down:
+            self.rotate_cut_plane(0, direction * self._rot_step)
+        elif 'y' in self._keys_down:
+            self.rotate_cut_plane(1, direction * self._rot_step)
         else:
-            self.rotate_cut_plane(self._cut_rot_axis,
-                                   direction * self._rot_step)
+            # Sin tecla mantenida: la rueda no hace nada
+            return
         self.update_cut_plane_visual()
 
     def execute_cut(self):
+        """Ejecuta el corte de las celdas que intersectan el plano de corte."""
         if not self._cut_active:
             self.update_status("Primero activa el plano con [T]")
             return
@@ -148,6 +178,7 @@ class CutPlane:
             origin = self._cut_origin.copy()
             plane_mesh, _ = self.build_cut_plane_mesh()
 
+            # Determinar los ejes locales del plano de corte
             plane_pts = np.asarray(plane_mesh.points)
             v_i = plane_pts[1] - plane_pts[0]
             v_j = plane_pts[2] - plane_pts[0]
@@ -159,6 +190,7 @@ class CutPlane:
             u_i = v_i / len_i
             u_j = v_j / len_j
 
+            # Determinar qué celdas intersectan el plano de corte
             points = np.asarray(self.grid.points)
             point_dist = np.dot(points - origin, normal)
             cells_array = self.grid.cells
@@ -168,16 +200,19 @@ class CutPlane:
             vert_dists = point_dist[vert_ids]
             straddles = (vert_dists.min(axis=1) < 0) & (vert_dists.max(axis=1) > 0)
 
+            # Determinar qué celdas están dentro del rectángulo definido por el plano de corte
             grid_centers = self.grid.cell_centers().points
             v = grid_centers - plane_pts[0]
             in_rect = ((np.dot(v, u_i) >= 0) & (np.dot(v, u_i) <= len_i) &
                        (np.dot(v, u_j) >= 0) & (np.dot(v, u_j) <= len_j))
 
+            # Crear máscara final de celdas a cortar
             cut_mask = straddles & in_rect
 
             cut_any = False
             self._cut_counter += 1
 
+            # Guardar estado de la cámara para restaurarlo después del corte
             cam_pos = tuple(self.plotter.camera.position)
             cam_focal = tuple(self.plotter.camera.focal_point)
             cam_up = tuple(self.plotter.camera.up)
@@ -186,7 +221,7 @@ class CutPlane:
             for key in list(self._group_keys_ordered):
                 if not self.visible.get(key, True):
                     continue
-
+                
                 group_mask = self.group_ids == key
                 to_separate = group_mask & cut_mask
 
@@ -253,7 +288,7 @@ class CutPlane:
             traceback.print_exc()
 
     def clear_cut_lines(self):
-        """Elimina las líneas rojas de corte."""
+        """Elimina las líneas de corte de la escena."""
         for actor in self._cut_line_actors:
             self.plotter.remove_actor(actor)
         self._cut_line_actors.clear()

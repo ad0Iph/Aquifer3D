@@ -8,6 +8,7 @@ class Rendering:
     DIM_OPACITY = 0.3
 
     def add_mesh_to_plotter(self, key):
+        """Agrega la malla del grupo `key` al plotter, con color y visibilidad actuales."""
         if key in self.actors:
             self.plotter.remove_actor(self.actors[key])
         surface = self.surfaces.get(key)
@@ -23,6 +24,7 @@ class Rendering:
         self.actors[key] = actor
 
     def refresh_all_actors(self):
+        """Redibuja todos los actores en la escena según las superficies, colores y visibilidad actuales."""
         self.rebuild_all_surfaces()
         for key in list(self.actors.keys()):
             if key not in self.surfaces:
@@ -36,11 +38,13 @@ class Rendering:
             self.add_mesh_to_plotter(key)
 
     def remove_highlight(self):
+        """Elimina el actor destacado si existe."""
         if self._highlight_actor is not None:
             self.plotter.remove_actor(self._highlight_actor)
             self._highlight_actor = None
 
     def highlight_component(self):
+        """Destaca el componente actualmente seleccionado, si existe."""
         self.remove_highlight()
         if not self.components or self.component_idx >= len(self.components):
             return
@@ -55,11 +59,13 @@ class Rendering:
         self.plotter.render()
 
     def restore_opacities(self):
+        """Restaura la opacidad de todos los actores a 1.0."""
         for key, actor in self.actors.items():
             actor.GetProperty().SetOpacity(1.0)
         self.plotter.render()
 
     def toggle_visibility(self, key, state):
+        """Activa o desactiva la visibilidad del grupo `key`."""
         self.visible[key] = state
         if key in self.actors:
             self.actors[key].SetVisibility(state)

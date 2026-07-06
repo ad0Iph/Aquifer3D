@@ -3,6 +3,7 @@ import numpy as np
 
 class Printing:
     def prepare_for_printing(self):
+        """Aplica la tolerancia a superficies de frontera para impresión 3D"""
         if self._prepared:
             self._prepared = False
             self.refresh_all_actors()
@@ -26,7 +27,7 @@ class Printing:
                 pts = np.asarray(surface.points).copy()
                 n_pts = len(pts)
 
-                # Vértices que NO están en la superficie exterior → frontera
+                # Vértices que estan en la frontera
                 is_boundary = np.zeros(n_pts, dtype=bool)
                 for i in range(n_pts):
                     pt_rounded = tuple(np.round(pts[i], decimals=6))

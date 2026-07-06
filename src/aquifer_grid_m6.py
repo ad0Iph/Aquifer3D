@@ -19,10 +19,12 @@ class AquiferGridM6:
         self.properties = {}
 
     def _check_loaded(self):
+        """Checkea que la clase este inicializada con un modelo MODFLOW cargado, lanza error si no lo esta"""
         if self.nlay is None:
             raise RuntimeError("Debes llamar load() antes de usar esta función.")
 
     def load(self):
+        """Carga los archivos dis y npf del modelo MODFLOW 6 desde la carpeta model_ws y extrae la geometría y propiedades relevantes"""
         sim = flopy.mf6.MFSimulation.load(
             sim_ws=self.model_ws,
             verbosity_level=0,
@@ -55,6 +57,7 @@ class AquiferGridM6:
             pass
 
     def build_grid(self, prop="k", z_exag=1.0):
+        """Construye un grid de PyVista a partir de la geometría y propiedades cargadas del modelo MODFLOW 6"""
         self._check_loaded()
 
         values  = self.properties[prop]
@@ -80,6 +83,7 @@ class AquiferGridM6:
         stride_k = (nrow + 1) * (ncol + 1)
         stride_i = ncol + 1
 
+        #Se definen los vértices de cada celda hexaédrica en el orden correcto para PyVista
         v0 = (k + 1) * stride_k + i       * stride_i + j
         v1 = (k + 1) * stride_k + i       * stride_i + (j + 1)
         v2 = (k + 1) * stride_k + (i + 1) * stride_i + (j + 1)
@@ -89,6 +93,7 @@ class AquiferGridM6:
         v6 = k       * stride_k + (i + 1) * stride_i + (j + 1)
         v7 = k       * stride_k + (i + 1) * stride_i + j
 
+        # Se construye el arreglo de celdas y tipos de celda para PyVista
         cells = np.column_stack([
             np.full(n_cells, 8, dtype=np.int64),
             v0, v1, v2, v3, v4, v5, v6, v7,

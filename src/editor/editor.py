@@ -18,7 +18,8 @@ class AquiferEditor(
     CutPlane,
     Printing,
     Export,
-):
+):  
+    # Resolución de la ventana de PyVista
     WINDOW_W = 1400
     WINDOW_H = 900
 
@@ -69,14 +70,16 @@ class AquiferEditor(
         self._cut_origin = None
         self._cut_rotation = np.eye(3)
         self._cut_scale = 1.0
-        self._cut_rot_axis = 2
+        
         self._cut_actor = None
         self._cut_border_actor = None
         self._cut_line_actors = []
         self._cut_counter = 0
-        self._move_step = 1.0
-        self._rot_step = 5.0
+        self._move_step = 2.0
+        self._rot_step = 2.0
         self._original_style = None
+        self._keys_down = set()
+        self._key_observers = []
 
         # Preparación para impresión
         self._prepared = False
@@ -87,9 +90,6 @@ class AquiferEditor(
         self._group_keys_ordered = group_keys
         self._status_actor = None
 
-    # ═══════════════════════════════════════════════════════════════════
-    # UI
-    # ═══════════════════════════════════════════════════════════════════
 
     def update_status(self, text):
         """Actualiza el texto de estado en la barra inferior."""
@@ -100,6 +100,7 @@ class AquiferEditor(
             color="black", name="status_text")
 
     def setup_ui(self):
+        """Configura la UI con checkboxes, textos y atajos de teclado."""
         checkbox_size = 22
         row_height = checkbox_size + 10
         y_start = self.WINDOW_H - 50
@@ -136,9 +137,6 @@ class AquiferEditor(
         self.plotter.add_key_event("g", self.confirm_reassign)
         self.plotter.add_key_event("t", self.toggle_cut_plane)
         self.plotter.add_key_event("f", self.execute_cut)
-        self.plotter.add_key_event("z", lambda: self.set_cut_rot_axis(2))
-        self.plotter.add_key_event("x", lambda: self.set_cut_rot_axis(0))
-        self.plotter.add_key_event("y", lambda: self.set_cut_rot_axis(1))
         self.plotter.add_key_event("e", self.export_visible)
         self.plotter.add_key_event("Escape", self.cancel)
         self.plotter.add_key_event("c", self.clear_cut_lines)
@@ -155,6 +153,7 @@ class AquiferEditor(
 
 
     def show(self):
+        """ Muestra la ventana de PyVista con la escena 3D y la interfaz de usuario """
         self.plotter = pv.Plotter(window_size=[self.WINDOW_W, self.WINDOW_H])
         self.plotter.background_color = "white"
         for key in self._group_keys_ordered:
@@ -172,6 +171,7 @@ class AquiferEditor(
             vtk_iren = iren
 
         def block_exit_keys(obj, event):
+            """Bloqueo de teclas E, Q y F que VTK usa para salir del programa"""
             key = vtk_iren.GetKeySym()
             if key and key.lower() in ('e', 'q', 'f'):
                 vtk_iren.SetKeyCode('\0')

@@ -8,8 +8,8 @@ except ImportError:
 
 
 class Surfaces:
-
     def rebuild_all_surfaces(self):
+        """Reconstruye las superficies de todos los grupos a partir de la malla original y los IDs de grupo"""
         unique_groups = np.unique(self.group_ids[~np.isnan(self.group_ids)])
         self.surfaces.clear()
 
@@ -25,6 +25,7 @@ class Surfaces:
             self.surfaces[val] = surface
 
     def compute_components(self, group_key):
+        """Calcula los componentes conexos de un grupo y devuelve una lista de diccionarios con sus superficies y celdas"""
         group_mask = self.group_ids == group_key
         group_cell_indices = np.where(group_mask)[0]
         if group_cell_indices.size == 0:
