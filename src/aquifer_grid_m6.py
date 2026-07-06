@@ -18,24 +18,13 @@ class AquiferGridM6:
 
         self.properties = {}
 
-    @classmethod
-    def from_subset(cls, nlay, nrow, ncol, x_edges, y_edges, z_edges, properties):
-        obj = cls.__new__(cls)
-        obj.model_ws   = None
-        obj.nlay       = nlay
-        obj.nrow       = nrow
-        obj.ncol       = ncol
-        obj.x_edges    = x_edges
-        obj.y_edges    = y_edges
-        obj.z_edges    = z_edges
-        obj.properties = properties
-        return obj
-
     def _check_loaded(self):
+        """Checkea que la clase este inicializada con un modelo MODFLOW cargado, lanza error si no lo esta"""
         if self.nlay is None:
             raise RuntimeError("Debes llamar load() antes de usar esta función.")
 
     def load(self):
+        """Carga los archivos dis y npf del modelo MODFLOW 6 desde la carpeta model_ws y extrae la geometría y propiedades relevantes"""
         sim = flopy.mf6.MFSimulation.load(
             sim_ws=self.model_ws,
             verbosity_level=0,
@@ -67,12 +56,13 @@ class AquiferGridM6:
         except Exception:
             pass
 
-    def build_grid(self, prop="k", z_exag=1.0, xy_scale=1.0):
+    def build_grid(self, prop="k", z_exag=1.0):
+        """Construye un grid de PyVista a partir de la geometría y propiedades cargadas del modelo MODFLOW 6"""
         self._check_loaded()
 
         values  = self.properties[prop]
-        x_edges = self.x_edges * xy_scale
-        y_edges = self.y_edges * xy_scale
+        x_edges = self.x_edges
+        y_edges = self.y_edges
         nlay, nrow, ncol = self.nlay, self.nrow, self.ncol
 
         K, I, J = np.mgrid[0:nlay + 1, 0:nrow + 1, 0:ncol + 1]
@@ -93,6 +83,7 @@ class AquiferGridM6:
         stride_k = (nrow + 1) * (ncol + 1)
         stride_i = ncol + 1
 
+        #Se definen los vértices de cada celda hexaédrica en el orden correcto para PyVista
         v0 = (k + 1) * stride_k + i       * stride_i + j
         v1 = (k + 1) * stride_k + i       * stride_i + (j + 1)
         v2 = (k + 1) * stride_k + (i + 1) * stride_i + (j + 1)
@@ -102,6 +93,7 @@ class AquiferGridM6:
         v6 = k       * stride_k + (i + 1) * stride_i + (j + 1)
         v7 = k       * stride_k + (i + 1) * stride_i + j
 
+        # Se construye el arreglo de celdas y tipos de celda para PyVista
         cells = np.column_stack([
             np.full(n_cells, 8, dtype=np.int64),
             v0, v1, v2, v3, v4, v5, v6, v7,
@@ -114,44 +106,3 @@ class AquiferGridM6:
         grid.cell_data["layer"] = k.astype(np.int32)
 
         return grid
-
-    def splitN(self, N):
-        self._check_loaded()
-        row_splits = np.linspace(0, self.nrow, N + 1, dtype=int)
-        col_splits = np.linspace(0, self.ncol, N + 1, dtype=int)
-
-        subgrids = {}
-        for i in range(N):
-            for j in range(N):
-                r0, r1 = row_splits[i], row_splits[i + 1]
-                c0, c1 = col_splits[j], col_splits[j + 1]
-
-                subgrids[f"block_{i}_{j}"] = AquiferGridM6.from_subset(
-                    nlay       = self.nlay,
-                    nrow       = r1 - r0,
-                    ncol       = c1 - c0,
-                    x_edges    = self.x_edges[c0:c1 + 1],
-                    y_edges    = self.y_edges[r0:r1 + 1],
-                    z_edges    = self.z_edges[:, r0:r1, c0:c1],
-                    properties = {k: v[:, r0:r1, c0:c1]
-                                  for k, v in self.properties.items()},
-                )
-        return subgrids
-
-    @staticmethod
-    def split_grid_by_unique(grid, prop="k"):
-        """
-        Detecta todos los valores distintos de una propiedad y retorna
-        un subgrid por cada valor único, ordenado de menor a mayor.
-        """
-        scalars = grid.cell_data[prop]
-        unique_vals = np.unique(scalars[~np.isnan(scalars)])
-
-        segments = {}
-        for val in np.sort(unique_vals):
-            indices = np.where(scalars == val)[0]
-            if indices.size == 0:
-                continue
-            segments[val] = grid.extract_cells(indices)
-
-        return segments

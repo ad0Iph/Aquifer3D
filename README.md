@@ -1,194 +1,199 @@
 # Aquifer3D
 
-Herramientas para visualización, exportación e impresión 3D de modelos de acuíferos MODFLOW 6.
+Herramientas para visualización, edición, exportación e impresión 3D de modelos de acuíferos MODFLOW 6.
 
 ## Estructura del proyecto
 
 ```
 Aquifer3D/
 ├── src/
-│   ├── aquifer_grid_m6.py    # Carga modelo MODFLOW → grid PyVista
-│   ├── show_model.py         # Visualizador con checkboxes por propiedad
-│   ├── export_model.py       # Exportador a PLY con colores
-│   └── mesh_repair.py        # Wrapper reparación/simplificación (CGAL o PyVista)
+│   ├── aquifer_grid_m6.py    # Carga modelo MODFLOW hacia grid en PyVista
+│   ├── mesh_repair.py        # Wrapper reparación/simplificación 
+│   ├── edit_model.py         # Launcher
+│   └── editor/               # Editor interactivo (paquete)
+│       ├── __init__.py
+│       ├── editor.py         # Clase principal AquiferEditor
+│       ├── utils.py          # Utilidades compartidas
+│       ├── surfaces.py       # Construcción de superficies
+│       ├── rendering.py      # Actores y visibilidad
+│       ├── selection.py      # Selección de componentes conexos entre propiedades
+│       ├── cut_plane.py      # Plano de corte
+│       ├── printing.py       # Tolerancia para impresión 3D
+│       └── export_3mf.py     # Exportación a .3mf
 │
-├── cgal_repair/              # Módulo C++ (compilar una vez)
+├── cgal_repair/              # Módulo C++
 │   ├── src/cgal_repair.cpp   # Binding pybind11 + CGAL
 │   ├── CMakeLists.txt
 │   ├── setup.py
 │   └── README.md
 │
-├── export/                   # Generado por export_model.py
+├── export/                   # Carpeta generada por los exportadores
 ├── requirements.txt
 ├── .gitignore
 └── README.md
 ```
 
+## Requisitos previos (Windows)
+
+Antes de comenzar, instalar:
+
+1. **Python 3.11 o superior** — [python.org/downloads](https://www.python.org/downloads/)
+   - Durante la instalación marcar  **"Add Python to PATH"**
+2. **Git** — [git-scm.com/downloads](https://git-scm.com/downloads)
+3. **Visual Studio Build Tools 2022** (solo para compilar el módulo CGAL) — [visualstudio.microsoft.com/downloads](https://visualstudio.microsoft.com/downloads/#build-tools-for-visual-studio-2022)
+   - En el instalador, seleccionar la carga de trabajo **"Desarrollo para el escritorio con C++"**
+4. **CMake** — [cmake.org/download](https://cmake.org/download/)
+   - Durante la instalación marcar  **"Add CMake to the system PATH"**
+
+Verificar que todo quedó instalado (abrir una terminal nueva):
+
+```powershell
+python --version    # Python 3.11+
+git --version       # git version 2.x
+cmake --version     # cmake version 3.x
+```
+
 ## Instalación
 
-### 1. Entorno Python
+### 1. Clonar el repositorio y crear el entorno
 
-```bash
+```powershell
 git clone <url-del-repo>
 cd Aquifer3D
 python -m venv .venv
-
-# Windows
 .venv\Scripts\activate
-
-# Linux / macOS
-source .venv/bin/activate
-
 pip install -r requirements.txt
 ```
 
-### 2. CGAL y pybind11 (necesario para reparación y simplificación de mallas)
+> **Nota:** cada vez que abras una terminal nueva para usar el proyecto, debes activar el entorno con `.venv\Scripts\activate`.
 
-Sin CGAL el proyecto funciona pero usa un fallback de PyVista menos robusto para reparar mallas.
+### 2. Instalar vcpkg y las dependencias C++
 
-#### Windows (vcpkg)
+vcpkg es el gestor de paquetes C++ de Microsoft. Se instala **una sola vez, fuera del proyecto**:
 
-```bash
-# Instalar vcpkg (una sola vez, fuera del proyecto)
-cd C:\dev
+```powershell
+cd C:\
+mkdir dev
+cd dev
 git clone https://github.com/microsoft/vcpkg.git
 cd vcpkg
-bootstrap-vcpkg.bat
-
-# Instalar dependencias (requiere Visual Studio Build Tools con C++)
-vcpkg install cgal:x64-windows pybind11:x64-windows
+.\bootstrap-vcpkg.bat
 ```
 
-#### Linux (apt)
+Instalar CGAL y pybind11 (esto puede tardar 30-60 minutos la primera vez):
 
-```bash
-sudo apt install libcgal-dev libgmp-dev libmpfr-dev
+```powershell
+.\vcpkg install cgal:x64-windows pybind11:x64-windows
 ```
 
-#### macOS (brew)
+### 3. Compilar el módulo cgal_repair
 
-```bash
-brew install cgal
-```
+Volver al directorio del proyecto:
 
-### 3. Compilar cgal_repair
-
-#### Windows
-
-```bash
-cd Aquifer3D\cgal_repair
+```powershell
+cd <ruta-al-proyecto>\Aquifer3D\cgal_repair
 mkdir build
 cd build
 cmake .. -DCMAKE_TOOLCHAIN_FILE=C:/dev/vcpkg/scripts/buildsystems/vcpkg.cmake
 cmake --build . --config Release
 ```
 
-Copiar el módulo compilado y las DLLs necesarias a `src/`:
+Copiar el módulo compilado y las DLLs a `src/`:
 
-```bash
+```powershell
 copy Release\cgal_repair.*.pyd ..\..\src\
 copy C:\dev\vcpkg\installed\x64-windows\bin\gmp.dll ..\..\src\
 copy C:\dev\vcpkg\installed\x64-windows\bin\mpfr-6.dll ..\..\src\
 ```
 
-#### Linux / macOS
+### 4. Verificar la instalación
 
-```bash
-cd Aquifer3D/cgal_repair
-mkdir build && cd build
-cmake .. -Dpybind11_DIR=$(python -c "import pybind11; print(pybind11.get_cmake_dir())")
-make -j$(nproc)
-cp cgal_repair*.so ../../src/
-```
-
-### 4. Verificar instalación
-
-```bash
-cd src
+```powershell
+cd <ruta-al-proyecto>\Aquifer3D\src
 python -c "import cgal_repair; print('CGAL OK')"
+python -c "import flopy, numpy, pyvista, matplotlib, pybind11, lib3mf; print('Python deps OK')"
 ```
+
+Si ambos comandos imprimen OK, la instalación está completa.
 
 ## Uso
 
-### Visualización
+Todos los comandos se ejecutan desde la carpeta `src/` con el entorno activado:
 
-```bash
-cd src
-
-# Visualización normal
-python show_model.py ../ruta_modelo
-
-# Con exageración vertical
-python show_model.py ../ruta_modelo --z-exag 10
-
-# Checkboxes por valor de k (un color por cada valor distinto)
-python show_model.py ../ruta_modelo --split-unique
-
-# Reparar mallas con CGAL
-python show_model.py ../ruta_modelo --split-unique --repair
-
-# Simplificar 50% de las caras
-python show_model.py ../ruta_modelo --split-unique --decimate 0.5
-
-# Plano de corte interactivo
-python show_model.py ../ruta_modelo --clip
-
-# Dividir en bloques NxN
-python show_model.py ../ruta_modelo --cuts 3
+```powershell
+cd <ruta-al-proyecto>\Aquifer3D\src
+..\.venv\Scripts\activate
 ```
 
-### Exportación
+### Editor interactivo
 
-```bash
-# Exportar modelo completo
-python export_model.py ../ruta_modelo
+```powershell
+# Editor básico
+python edit_model.py ..\ruta_modelo
 
-# Un PLY por cada valor distinto de k
-python export_model.py ../ruta_modelo --split-unique
+# Con exageración vertical y simplificación
+python edit_model.py ..\ruta_modelo --z-exag 2.5 --simplification 0.85
 
-# Reparar + simplificar para impresión 3D
-python export_model.py ../ruta_modelo --split-unique --repair --decimate 0.5
+# Con tolerancia de impresión personalizada (mm por lado)
+python edit_model.py ..\ruta_modelo --tolerance 0.2
 
-# Un PLY por capa geológica
-python export_model.py ../ruta_modelo --layers
-
-# Combinaciones
-python export_model.py ../ruta_modelo --split-unique --layers
-python export_model.py ../ruta_modelo --cuts 2 --repair
+# Con colormap personalizado
+python edit_model.py ..\ruta_modelo --cmap Set1
 ```
 
-### Opciones comunes
+#### Controles del editor
+
+| Tecla | Acción |
+|-------|--------|
+| `S` | Entrar en modo selección |
+| `1-9` | Elegir grupo (fuente o destino según el modo) |
+| `N` / `P` | Navegar entre componentes conexos |
+| `D` | Elegir grupo destino |
+| `G` | Confirmar reasignación |
+| `Esc` | Cancelar |
+| `T` | Activar/desactivar plano de corte |
+|  `Z`+rueda | Rotar plano en Z |
+|  `X`+rueda | Rotar plano en X |
+|  `Y`+rueda | Rotar plano en Y |
+| `Ctrl`+rueda | Mover plano en Z |
+| `Alt`+rueda | Mover plano en X |
+| `Shift`+rueda | Mover plano en Y |
+| `Ctrl`+`Shift`+rueda | Escalar el plano |
+| `F` | Ejecutar corte |
+| `C` | Borrar líneas de corte |
+| `L` | Aplicar/revertir tolerancia de impresión |
+| `E` | Exportar mallas visibles a 3MF |
+
+
+### Opciones de lanzamiento
 
 | Flag | Descripción |
 |------|-------------|
 | `--prop k` | Propiedad a visualizar (default: `k`) |
 | `--z-exag N` | Exageración vertical |
-| `--no-log` | Escala lineal en vez de logarítmica |
-| `--split-unique` | Separar por valores distintos de la propiedad |
-| `--repair` | Reparar mallas (watertight) con CGAL |
 | `--decimate 0.X` | Simplificar malla (0.5 = eliminar 50% de caras) |
-| `--layers` | Exportar por capa geológica |
-| `--cuts N` | Subdividir en NxN bloques |
-| `--export ruta` | (show_model) Exportar además de visualizar |
-| `--out archivo.ply` | (export_model) Archivo de salida |
-| `--out-dir carpeta` | (export_model) Directorio de salida |
+| `--simplification 0.X` | Simplificar al cargar |
+| `--tolerance N` | Holgura en mm para impresión 3D |
+| `--cmap nombre` | Colormap de matplotlib |
 
-## Pipeline de reparación CGAL
+## Flujo de trabajo para impresión 3D
 
-Cuando se usa `--repair`, la reparación sigue este pipeline:
+1. Abrir el editor: `python edit_model.py ..\modelo --z-exag 2.5 --simplification 0.85`.
+2. (Opcional) Reasignar componentes sueltos con `S` → `1-9` → `N/P` → `D` → `G`.
+3. (Opcional) Cortar el modelo en piezas con `T` → posicionar plano → `F`.
+4. Aplicar tolerancia de ensamblaje con `L`, esto debe hacerse manualmente.
+5. Exportar con `E` → genera archivos 3MF en `export/editor/`.
+6. Abrir los 3MF en **Bambu Studio** (o el slicer de su preferencia).
 
-1. **repair_polygon_soup** — elimina vértices y caras duplicados/degenerados
-2. **orient_polygon_soup** — orienta todas las caras consistentemente
-3. **polygon_soup_to_polygon_mesh** — construye un Surface_mesh válido
-4. **stitch_borders** — une bordes abiertos que coinciden geométricamente
-5. **remove_degenerate_faces** — limpia caras con área cero
-6. **triangulate_faces** — asegura que todo son triángulos
-7. **orient_to_bound_a_volume** — normales hacia afuera (si la malla es cerrada)
-
-Cuando se usa `--decimate`, la simplificación usa **edge collapse** de CGAL con costo por longitud de arista y colocación en punto medio, que preserva mejor la geometría que `pyvista.decimate`.
 
 ## Dependencias
 
-- **Python**: flopy, numpy, pyvista, matplotlib, pybind11
-- **C++ (opcional)**: CGAL, GMP, MPFR
-- **Compilación**: CMake, Visual Studio Build Tools (Windows) o GCC (Linux)
+- **Python**: flopy, numpy, pyvista, matplotlib, pybind11, lib3mf
+- **C++**: CGAL, GMP, MPFR (via vcpkg)
+- **Compilación**: CMake, Visual Studio Build Tools 2022
+
+## Problemas comunes
+
+**`ImportError: DLL load failed` al importar cgal_repair** — faltan `gmp.dll` y/o `mpfr-6.dll` en `src/`. Copiarlas desde `C:\dev\vcpkg\installed\x64-windows\bin\`.
+
+**CMake no encuentra CGAL** — verificar que se pasó el toolchain de vcpkg: `-DCMAKE_TOOLCHAIN_FILE=C:/dev/vcpkg/scripts/buildsystems/vcpkg.cmake`.
