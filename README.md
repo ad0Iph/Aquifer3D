@@ -194,6 +194,6 @@ python edit_model.py ..\ruta_modelo --cmap Set1
 
 ## Problemas comunes
 
-**`ImportError: DLL load failed` al importar cgal_repair** — faltan `gmp.dll` y/o `mpfr-6.dll` en `src/`. Copiarlas desde `C:\dev\vcpkg\installed\x64-windows\bin\`.
+**`ImportError: DLL load failed` al importar cgal_repair** — faltan `gmp-10.dll` y/o `mpfr-6.dll` en `src/`. Copiarlas desde `C:\dev\vcpkg\installed\x64-windows\bin\`.
 
 **CMake no encuentra CGAL** — verificar que se pasó el toolchain de vcpkg: `-DCMAKE_TOOLCHAIN_FILE=C:/dev/vcpkg/scripts/buildsystems/vcpkg.cmake`.
