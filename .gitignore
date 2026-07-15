@@ -1,6 +1,7 @@
 #Carpetas y modelos MODFLOW  
 docs/
 models/
+__pycache__/
 
 #Build de cgal_repair
 cgal_repair/build/
