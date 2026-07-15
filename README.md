@@ -37,7 +37,7 @@ Aquifer3D/
 
 Antes de comenzar, instalar:
 
-1. **Python 3.11 o superior** — [python.org/downloads](https://www.python.org/downloads/)
+1. **Python 3.12 (versión recomendada)** — [python.org/downloads](https://www.python.org/downloads/release/python-3120/)
    - Durante la instalación marcar  **"Add Python to PATH"**
 2. **Git** — [git-scm.com/downloads](https://git-scm.com/downloads)
 3. **Visual Studio Build Tools 2022** (solo para compilar el módulo CGAL) — [visualstudio.microsoft.com/downloads](https://visualstudio.microsoft.com/downloads/#build-tools-for-visual-studio-2022)
@@ -102,7 +102,7 @@ Copiar el módulo compilado y las DLLs a `src/`:
 
 ```powershell
 copy Release\cgal_repair.*.pyd ..\..\src\
-copy C:\dev\vcpkg\installed\x64-windows\bin\gmp.dll ..\..\src\
+copy C:\dev\vcpkg\installed\x64-windows\bin\gmp-10.dll ..\..\src\
 copy C:\dev\vcpkg\installed\x64-windows\bin\mpfr-6.dll ..\..\src\
 ```
 
