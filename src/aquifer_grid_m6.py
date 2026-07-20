@@ -18,7 +18,7 @@ class AquiferGridM6:
 
         self.properties = {}
 
-    def _check_loaded(self):
+    def check_loaded(self):
         """Checkea que la clase este inicializada con un modelo MODFLOW cargado, lanza error si no lo esta"""
         if self.nlay is None:
             raise RuntimeError("Debes llamar load() antes de usar esta función.")
@@ -58,7 +58,7 @@ class AquiferGridM6:
 
     def build_grid(self, prop="k", z_exag=1.0):
         """Construye un grid de PyVista a partir de la geometría y propiedades cargadas del modelo MODFLOW 6"""
-        self._check_loaded()
+        self.check_loaded()
 
         values  = self.properties[prop]
         x_edges = self.x_edges

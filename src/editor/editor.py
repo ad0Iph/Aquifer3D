@@ -63,39 +63,39 @@ class AquiferEditor(
         self.components = []
         self.component_idx = 0
         self.target_group = None
-        self._highlight_actor = None
+        self.highlight_actor = None
 
         # Plano de corte libre
-        self._cut_active = False
-        self._cut_origin = None
-        self._cut_rotation = np.eye(3)
-        self._cut_scale = 1.0
+        self.cut_active = False
+        self.cut_origin = None
+        self.cut_rotation = np.eye(3)
+        self.cut_scale = 1.0
         
-        self._cut_actor = None
-        self._cut_border_actor = None
-        self._cut_line_actors = []
-        self._cut_counter = 0
-        self._move_step = 2.0
-        self._rot_step = 2.0
-        self._original_style = None
-        self._keys_down = set()
-        self._key_observers = []
+        self.cut_actor = None
+        self.cut_border_actor = None
+        self.cut_line_actors = []
+        self.cut_counter = 0
+        self.move_step = 2.0
+        self.rot_step = 2.0
+        self.original_style = None
+        self.keys_down = set()
+        self.key_observers = []
 
         # Preparación para impresión
-        self._prepared = False
-        self._full_surface = self.grid.extract_surface()
+        self.prepared = False
+        self.full_surface = self.grid.extract_surface()
 
         # Plotter
         self.plotter = None
-        self._group_keys_ordered = group_keys
-        self._status_actor = None
+        self.group_keys_ordered = group_keys
+        self.status_actor = None
 
 
     def update_status(self, text):
         """Actualiza el texto de estado en la barra inferior."""
-        if self._status_actor is not None:
-            self.plotter.remove_actor(self._status_actor)
-        self._status_actor = self.plotter.add_text(
+        if self.status_actor is not None:
+            self.plotter.remove_actor(self.status_actor)
+        self.status_actor = self.plotter.add_text(
             text, position=(10, 8), font_size=9,
             color="black", name="status_text")
 
@@ -105,7 +105,7 @@ class AquiferEditor(
         row_height = checkbox_size + 10
         y_start = self.WINDOW_H - 50
 
-        for idx, key in enumerate(self._group_keys_ordered):
+        for idx, key in enumerate(self.group_keys_ordered):
             color = self.colors[key]
             y_pos = y_start - idx * row_height
 
@@ -141,14 +141,14 @@ class AquiferEditor(
         self.plotter.add_key_event("Escape", self.cancel)
         self.plotter.add_key_event("c", self.clear_cut_lines)
 
-        for i in range(min(9, len(self._group_keys_ordered))):
+        for i in range(min(9, len(self.group_keys_ordered))):
             def make_key_cb(idx):
                 def cb(): self.on_number_key(idx)
                 return cb
             self.plotter.add_key_event(str(i + 1), make_key_cb(i))
 
         self.update_status(
-            f"{len(self._group_keys_ordered)} grupos — "
+            f"{len(self.group_keys_ordered)} grupos — "
             f"[S] seleccionar  [T] plano de corte")
 
 
@@ -156,7 +156,7 @@ class AquiferEditor(
         """ Muestra la ventana de PyVista con la escena 3D y la interfaz de usuario """
         self.plotter = pv.Plotter(window_size=[self.WINDOW_W, self.WINDOW_H])
         self.plotter.background_color = "white"
-        for key in self._group_keys_ordered:
+        for key in self.group_keys_ordered:
             self.add_mesh_to_plotter(key)
         self.setup_ui()
         self.plotter.add_axes(xlabel="X (m)", ylabel="Y (m)", zlabel="Z (m)")
@@ -166,7 +166,7 @@ class AquiferEditor(
         if hasattr(iren, 'interactor') and iren.interactor is not None:
             vtk_iren = iren.interactor
         elif hasattr(iren, '_iren'):
-            vtk_iren = iren._iren
+            vtk_iren = iren.iren
         else:
             vtk_iren = iren
 
@@ -178,5 +178,5 @@ class AquiferEditor(
 
         vtk_iren.AddObserver('CharEvent', block_exit_keys, 1.0)
 
-        n = len(self._group_keys_ordered)
+        n = len(self.group_keys_ordered)
         self.plotter.show(title=f"Aquifer Editor — {self.prop}: {n} grupos")

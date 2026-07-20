@@ -4,8 +4,8 @@ import numpy as np
 class Printing:
     def prepare_for_printing(self):
         """Aplica la tolerancia a superficies de frontera para impresión 3D"""
-        if self._prepared:
-            self._prepared = False
+        if self.prepared:
+            self.prepared = False
             self.refresh_all_actors()
             self.update_status("Tolerancia revertida — superficies originales")
             return
@@ -15,7 +15,7 @@ class Printing:
             self.update_status(f"Aplicando tolerancia de {tol} mm...")
             self.plotter.render()
 
-            full_surface = self._full_surface.triangulate()
+            full_surface = self.full_surface.triangulate()
             full_pts = np.round(np.asarray(full_surface.points), decimals=6)
             full_set = set(map(tuple, full_pts))
 
@@ -67,7 +67,7 @@ class Printing:
                 surface.points = pts
                 self.add_mesh_to_plotter(key)
 
-            self._prepared = True
+            self.prepared = True
             self.plotter.render()
 
             n_groups = len(self.surfaces)

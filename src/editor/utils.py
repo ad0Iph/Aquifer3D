@@ -20,12 +20,12 @@ def format_value(v):
 class CutPlaneStyle(BaseStyle):
     def __init__(self, editor):
         super().__init__()
-        self._editor = editor
+        self.editor = editor
         self.AddObserver("MouseWheelForwardEvent", self.fwd)
         self.AddObserver("MouseWheelBackwardEvent", self.bwd)
 
     def fwd(self, obj, event):
-        self._editor.on_wheel(1)
+        self.editor.on_wheel(1)
 
     def bwd(self, obj, event):
-        self._editor.on_wheel(-1)
+        self.editor.on_wheel(-1)

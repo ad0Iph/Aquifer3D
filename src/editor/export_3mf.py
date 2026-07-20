@@ -50,7 +50,7 @@ class Export:
         out_dir.mkdir(parents=True, exist_ok=True)
 
         exported = 0
-        for key in self._group_keys_ordered:
+        for key in self.group_keys_ordered:
             if not self.visible.get(key, False):
                 continue
             surface = self.surfaces.get(key)

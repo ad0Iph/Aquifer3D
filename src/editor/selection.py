@@ -16,7 +16,7 @@ class Selection:
         self.mode = self.MODE_SELECT
         group_list = " | ".join(
             f"[{i+1}] {format_value(k)}"
-            for i, k in enumerate(self._group_keys_ordered[:9]))
+            for i, k in enumerate(self.group_keys_ordered[:9]))
         self.update_status(f"SELECCIÓN — Elige grupo fuente: {group_list}")
 
     def on_number_key(self, index):
@@ -28,9 +28,9 @@ class Selection:
 
     def select_source_group(self, index):
         """Selecciona el grupo fuente y calcula sus componentes conexos"""
-        if index >= len(self._group_keys_ordered):
+        if index >= len(self.group_keys_ordered):
             return
-        self.source_group = self._group_keys_ordered[index]
+        self.source_group = self.group_keys_ordered[index]
         self.update_status("Calculando componentes...")
         self.plotter.render()
         try:
@@ -80,15 +80,15 @@ class Selection:
         self.mode = self.MODE_DESTINATION
         group_list = " | ".join(
             f"[{i+1}] {format_value(k)}"
-            for i, k in enumerate(self._group_keys_ordered[:9])
+            for i, k in enumerate(self.group_keys_ordered[:9])
             if k != self.source_group)
         self.update_status(f"DESTINO — Elige grupo: {group_list}")
 
     def select_destination(self, index):
         """Selecciona el grupo destino para reasignar el componente actual"""
-        if index >= len(self._group_keys_ordered):
+        if index >= len(self.group_keys_ordered):
             return
-        target = self._group_keys_ordered[index]
+        target = self.group_keys_ordered[index]
         if target == self.source_group:
             self.update_status("No puedes elegir el mismo grupo")
             return
@@ -117,8 +117,8 @@ class Selection:
         if np.sum(self.group_ids == source) == 0:
             for d in [self.visible, self.colors]:
                 d.pop(source, None)
-            if source in self._group_keys_ordered:
-                self._group_keys_ordered.remove(source)
+            if source in self.group_keys_ordered:
+                self.group_keys_ordered.remove(source)
 
         self.remove_highlight()
         self.restore_opacities()
@@ -137,4 +137,4 @@ class Selection:
         self.source_group = self.target_group = None
         self.components = []
         self.update_status(
-            f"{len(self._group_keys_ordered)} grupos — [S] seleccionar")
+            f"{len(self.group_keys_ordered)} grupos — [S] seleccionar")
