@@ -90,6 +90,10 @@ class AquiferEditor(
         self.group_keys_ordered = group_keys
         self.status_actor = None
 
+        # UI 
+        self.ui_text_actors = []
+        self.last_window_size = (self.WINDOW_W, self.WINDOW_H)
+
 
     def update_status(self, text):
         """Actualiza el texto de estado en la barra inferior."""
@@ -98,36 +102,51 @@ class AquiferEditor(
         self.status_actor = self.plotter.add_text(
             text, position=(10, 8), font_size=9,
             color="black", name="status_text")
+        
+    def build_panel(self):
+        """(Re)construye casillas, etiquetas y texto de ayuda según el tamaño actual."""
+        # Limpiar panel anterior
+        for actor in self.ui_text_actors:
+            self.plotter.remove_actor(actor)
+        self.ui_text_actors = []
+        self.plotter.clear_button_widgets()
 
-    def setup_ui(self):
-        """Configura la UI con checkboxes, textos y atajos de teclado."""
+        w, h = self.plotter.render_window.GetSize()   # tamaño ACTUAL, no la constante
         checkbox_size = 22
         row_height = checkbox_size + 10
-        y_start = self.WINDOW_H - 50
+        col_width = 230
+        y_start = h - 50
+        max_rows = 5
 
         for idx, key in enumerate(self.group_keys_ordered):
-            color = self.colors[key]
-            y_pos = y_start - idx * row_height
+            col, row = divmod(idx, max_rows)
+            x = 10 + col * col_width
+            y = y_start - row * row_height
 
             def make_vis_cb(k):
                 def cb(state): self.toggle_visibility(k, state)
                 return cb
 
             self.plotter.add_checkbox_button_widget(
-                make_vis_cb(key), value=True,
-                position=(10, y_pos), size=checkbox_size,
-                color_on=color, color_off="grey")
+                make_vis_cb(key), value=self.visible.get(key, True),
+                position=(x, y), size=checkbox_size,
+                color_on=self.colors[key], color_off="grey")
 
             n_cells = self.surfaces[key].n_cells if key in self.surfaces else 0
-            self.plotter.add_text(
+            t = self.plotter.add_text(
                 f"{idx+1}: {self.prop}={format_value(key)}  ({n_cells})",
-                position=(40, y_pos + 2), font_size=8, color="black")
+                position=(x + 30, y + 2), font_size=8, color="black")
+            self.ui_text_actors.append(t)
 
-        self.plotter.add_text(
+        t = self.plotter.add_text(
             "[S] Seleccionar  [N/P] Navegar  [D+num] Destino  [G] Confirmar  "
             "[T] Plano de corte  [F] Cortar  [L] Preparar impresión  "
             "[Esc] Cancelar  [C] Reset líneas  [E] Exportar",
             position=(10, 30), font_size=7, color="grey")
+        self.ui_text_actors.append(t)
+
+    def setup_ui(self):
+        self.build_panel()
 
         self.plotter.add_key_event("s", self.enter_select_mode)
         self.plotter.add_key_event("n", self.next_component)
@@ -176,7 +195,16 @@ class AquiferEditor(
             if key and key.lower() in ('e', 'q', 'f'):
                 vtk_iren.SetKeyCode('\0')
 
+        def on_window_resize(obj, event):
+            size = self.plotter.render_window.GetSize()
+            if size != self.last_window_size:      # evita reconstruir sin cambio real
+                self.last_window_size = size
+                self.build_panel()
+                self.plotter.render()
+
         vtk_iren.AddObserver('CharEvent', block_exit_keys, 1.0)
+        vtk_iren.AddObserver('ConfigureEvent', on_window_resize)
 
         n = len(self.group_keys_ordered)
+        self.plotter.enable_3_lights()
         self.plotter.show(title=f"Aquifer Editor — {self.prop}: {n} grupos")
