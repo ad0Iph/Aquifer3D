@@ -64,6 +64,7 @@ class AquiferEditor(
         self.component_idx = 0
         self.target_group = None
         self.highlight_actor = None
+        self.num_buffer = ""
 
         # Plano de corte libre
         self.cut_active = False
@@ -83,7 +84,7 @@ class AquiferEditor(
 
         # Preparación para impresión
         self.prepared = False
-        self.full_surface = self.grid.extract_surface()
+        self.full_surface = self.grid.extract_surface(algorithm="dataset_surface")
 
         # Plotter
         self.plotter = None
@@ -160,11 +161,13 @@ class AquiferEditor(
         self.plotter.add_key_event("Escape", self.cancel)
         self.plotter.add_key_event("c", self.clear_cut_lines)
 
-        for i in range(min(9, len(self.group_keys_ordered))):
-            def make_key_cb(idx):
-                def cb(): self.on_number_key(idx)
+        for i in "0123456789":
+            def make_key_cb(digit):
+                def cb(): self.on_number_key(digit)
                 return cb
-            self.plotter.add_key_event(str(i + 1), make_key_cb(i))
+            self.plotter.add_key_event(i, make_key_cb(i))
+        self.plotter.add_key_event(f"Return", self.confirm_number)
+            
 
         self.update_status(
             f"{len(self.group_keys_ordered)} grupos — "
@@ -207,4 +210,6 @@ class AquiferEditor(
 
         n = len(self.group_keys_ordered)
         self.plotter.enable_3_lights()
+        self.plotter.show_bounds(grid='front', font_size=14, location='outer', all_edges=True,
+            n_xlabels=4, n_ylabels=4, n_zlabels=2)
         self.plotter.show(title=f"Aquifer Editor — {self.prop}: {n} grupos")

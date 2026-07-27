@@ -14,13 +14,36 @@ class Selection:
             self.cancel()
             return
         self.mode = self.MODE_SELECT
-        group_list = " | ".join(
-            f"[{i+1}] {format_value(k)}"
-            for i, k in enumerate(self.group_keys_ordered[:9]))
-        self.update_status(f"SELECCIÓN — Elige grupo fuente: {group_list}")
+        if len(self.group_keys_ordered) <= 9:
+            group_list = " | ".join(
+                f"[{i+1}] {format_value(k)}"
+                for i, k in enumerate(self.group_keys_ordered))
+            self.update_status(f"SELECCIÓN — Elige grupo fuente: {group_list}")
+        else:
+            self.update_status(f"SELECCIÓN — Ingresa grupo fuente: [1-{len(self.group_keys_ordered)}] + [Enter] confirmar")
 
-    def on_number_key(self, index):
+    def on_number_key(self, digit):
         """Maneja la selección de grupo o destino"""
+        if self.mode not in (self.MODE_SELECT, self.MODE_DESTINATION):
+            return
+        if len(self.group_keys_ordered) <= 9:
+            self.apply_group_number(digit)
+            return
+        self.num_buffer += str(digit)
+        self.update_status(f"Grupo: {self.num_buffer} - [Enter] confirmar [Esc] cancelar")
+
+    def confirm_number(self):
+        buff = self.num_buffer
+        if not buff or self.mode not in (self.MODE_SELECT, self.MODE_DESTINATION):
+            return
+        self.num_buffer = ""
+        self.apply_group_number(int(buff))
+    
+    def apply_group_number(self, number):
+        index = number - 1
+        if index < 0 or index >= len(self.group_keys_ordered):
+            self.update_status(f"No existe el grupo {number}")
+            return
         if self.mode == self.MODE_SELECT:
             self.select_source_group(index)
         elif self.mode == self.MODE_DESTINATION:
@@ -78,11 +101,14 @@ class Selection:
         if self.mode != self.MODE_BROWSE:
             return
         self.mode = self.MODE_DESTINATION
-        group_list = " | ".join(
-            f"[{i+1}] {format_value(k)}"
-            for i, k in enumerate(self.group_keys_ordered[:9])
-            if k != self.source_group)
-        self.update_status(f"DESTINO — Elige grupo: {group_list}")
+        if len(self.group_keys_ordered) <= 9:
+            group_list = " | ".join(
+                f"[{i+1}] {format_value(k)}"
+                for i, k in enumerate(self.group_keys_ordered[:9])
+                if k != self.source_group)
+            self.update_status(f"DESTINO — Elige grupo: {group_list}")
+        else:
+            self.update_status(f"DESTINO — Ingresa grupo destino: [1-{len(self.group_keys_ordered)}] + [Enter] confirmar")
 
     def select_destination(self, index):
         """Selecciona el grupo destino para reasignar el componente actual"""
@@ -136,5 +162,6 @@ class Selection:
         self.mode = self.MODE_VIEW
         self.source_group = self.target_group = None
         self.components = []
+        self.num_buffer = ""
         self.update_status(
             f"{len(self.group_keys_ordered)} grupos — [S] seleccionar")

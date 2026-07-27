@@ -156,7 +156,7 @@ if __name__ == "__main__":
     print(f"Grupo {args.prop}={target:g}: {indices.size} celdas")
 
     sub = grid.extract_cells(indices)
-    original = sub.extract_surface().triangulate()
+    original = sub.extract_surface(algorithm="dataset_surface").triangulate()
 
     # ── 2. Reparar con ambos métodos ─────────────────────────────────
     stats_orig = mesh_stats(original, "Original (sin reparar)")
