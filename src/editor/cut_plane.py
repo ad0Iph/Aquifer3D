@@ -64,6 +64,8 @@ class CutPlane:
             plane, color="red", opacity=0.15,
             name="cut_plane", pickable=False,
             reset_camera=False)
+        self.cut_actor.UseBoundsOff()
+
         edges = plane.extract_feature_edges(
             boundary_edges=True, feature_edges=False,
             manifold_edges=False, non_manifold_edges=False)
@@ -71,6 +73,8 @@ class CutPlane:
             edges, color="red", line_width=2.0,
             name="cut_border", pickable=False,
             reset_camera=False)
+        self.cut_border_actor.UseBoundsOff()
+
         self.plotter.render()
 
     def track_key_press(self, obj, event):
@@ -266,6 +270,7 @@ class CutPlane:
                             clipped, color="red", line_width=3.0,
                             name=f"cut_{self.cut_counter}_{id(surface)}",
                             pickable=False, reset_camera=False)
+                        actor.UseBoundsOff()
                         self.cut_line_actors.append(actor)
                 except Exception:
                     pass

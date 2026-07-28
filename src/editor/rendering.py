@@ -71,20 +71,32 @@ class Rendering:
             self.actors[key].SetVisibility(state)
 
     def toggle_bounds(self):
-        """Tecla I: muestra/oculta las cotas del modelo con unidades reales."""
+        """Tecla I: muestra/oculta los borders del modelo con unidades reales."""
         if self.show_bounds:
             self.plotter.remove_bounds_axes()
+            self.plotter.remove_bounding_box()
             self.show_bounds = False
-            self.update_status("Cotas ocultas")
+            self.update_status("Bordes ocultos")
         else:
             xmin, xmax, ymin, ymax, zmin, zmax = self.grid.bounds
+            z_range = (zmin / self.z_exag, zmax / self.z_exag)
             self.plotter.show_bounds(
                 grid='front', location='outer', all_edges=True,
                 font_size=14, n_xlabels=4, n_ylabels=4, n_zlabels=2,
                 xtitle='X (m)', ytitle='Y (m)',
                 ztitle=f'Z (m, vista x{self.z_exag:g})',
+                bounds=self.grid.bounds,
                 axes_ranges=(xmin, xmax, ymin, ymax,
                             zmin / self.z_exag, zmax / self.z_exag))
+
+            self.orig_update_bounds_axes = self.plotter.renderer.update_bounds_axes
+            def pinned_update_bounds_axes():
+                cax = self.plotter.renderer.cube_axes_actor
+                if cax is not None:
+                    cax.update_bounds(self.grid.bounds)  
+                    cax.z_axis_range = z_range           
+            self.plotter.renderer.update_bounds_axes = pinned_update_bounds_axes
+
             self.show_bounds = True
             self.update_status("Cotas en metros (Z corregido a elevación real)")
         self.plotter.render()
