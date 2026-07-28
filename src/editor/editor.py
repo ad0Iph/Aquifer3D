@@ -95,6 +95,8 @@ class AquiferEditor(
         self.ui_text_actors = []
         self.last_window_size = (self.WINDOW_W, self.WINDOW_H)
 
+        # Info
+        self.show_bounds = False
 
     def update_status(self, text):
         """Actualiza el texto de estado en la barra inferior."""
@@ -141,7 +143,7 @@ class AquiferEditor(
 
         t = self.plotter.add_text(
             "[S] Seleccionar  [N/P] Navegar  [D+num] Destino  [G] Confirmar  "
-            "[T] Plano de corte  [F] Cortar  [L] Preparar impresión  "
+            "[T] Plano de corte  [F] Cortar  [L] Preparar impresión [I] Mostrar límites  "
             "[Esc] Cancelar  [C] Reset líneas  [E] Exportar",
             position=(10, 30), font_size=7, color="grey")
         self.ui_text_actors.append(t)
@@ -160,6 +162,7 @@ class AquiferEditor(
         self.plotter.add_key_event("e", self.export_visible)
         self.plotter.add_key_event("Escape", self.cancel)
         self.plotter.add_key_event("c", self.clear_cut_lines)
+        self.plotter.add_key_event("i", self.toggle_bounds)
 
         for i in "0123456789":
             def make_key_cb(digit):
@@ -210,6 +213,4 @@ class AquiferEditor(
 
         n = len(self.group_keys_ordered)
         self.plotter.enable_3_lights()
-        self.plotter.show_bounds(grid='front', font_size=14, location='outer', all_edges=True,
-            n_xlabels=4, n_ylabels=4, n_zlabels=2)
         self.plotter.show(title=f"Aquifer Editor — {self.prop}: {n} grupos")
