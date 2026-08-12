@@ -1,6 +1,3 @@
-// cgal_repair.cpp
-// Módulo C++ con pybind11 para reparación y simplificación de mallas usando CGAL.
-
 #include <pybind11/pybind11.h>
 #include <pybind11/numpy.h>
 #include <pybind11/stl.h>
@@ -139,10 +136,21 @@ repair_mesh(py::array_t<double> vertices_np, py::array_t<int> faces_np)
 
     // 4. Unir bordes, limpiar, triangular
     PMP::stitch_borders(mesh);
+    PMP::remove_degenerate_edges(mesh);
     PMP::remove_degenerate_faces(mesh);
     PMP::triangulate_faces(mesh);
+    PMP::duplicate_non_manifold_vertices(mesh);
 
-    // 5. Orientar normales
+    std::vector<Mesh::Halfedge_index> cycles;
+    PMP::extract_boundary_cycles(mesh, std::back_inserter(cycles));
+    for (auto h : cycles) {
+        std::vector<Mesh::Face_index> patch;
+        PMP::triangulate_hole(mesh, h,
+            CGAL::parameters::face_output_iterator(std::back_inserter(patch)));
+    }
+
+    mesh.collect_garbage();
+
     if (CGAL::is_closed(mesh))
         PMP::orient_to_bound_a_volume(mesh);
 
@@ -178,7 +186,9 @@ repair_and_simplify(py::array_t<double> vertices_np, py::array_t<int> faces_np,
     auto [rep_verts, rep_faces] = repair_mesh(vertices_np, faces_np);
 
     // Después simplificar
-    return simplify_mesh(rep_verts, rep_faces, ratio);
+    auto [simp_verts, simp_faces] = simplify_mesh(rep_verts, rep_faces, ratio);
+
+    return repair_mesh(simp_verts, simp_faces);
 }
 
 /// Verifica si una malla es cerrada (watertight).

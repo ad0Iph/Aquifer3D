@@ -40,7 +40,7 @@ class Selection:
         self.apply_group_number(int(buff))
     
     def apply_group_number(self, number):
-        index = number - 1
+        index = int(number) - 1
         if index < 0 or index >= len(self.group_keys_ordered):
             self.update_status(f"No existe el grupo {number}")
             return

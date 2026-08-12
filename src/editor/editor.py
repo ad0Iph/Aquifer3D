@@ -84,7 +84,7 @@ class AquiferEditor(
 
         # Preparación para impresión
         self.prepared = False
-        self.full_surface = self.grid.extract_surface(algorithm="dataset_surface")
+        self.full_surface = self.grid.extract_surface()
 
         # Plotter
         self.plotter = None
@@ -94,6 +94,7 @@ class AquiferEditor(
         # UI 
         self.ui_text_actors = []
         self.last_window_size = (self.WINDOW_W, self.WINDOW_H)
+        self.resize_timer_id = None
 
         # Info
         self.show_bounds = False
@@ -196,21 +197,33 @@ class AquiferEditor(
             vtk_iren = iren
 
         def block_exit_keys(obj, event):
-            """Bloqueo de teclas E, Q y F que VTK usa para salir del programa"""
+            """Bloqueo de teclas especial de VTK"""
             key = vtk_iren.GetKeySym()
-            if key and key.lower() in ('e', 'q', 'f'):
+            if key and key.lower() in ('e', 'q', '3', 'f'):
                 vtk_iren.SetKeyCode('\0')
 
         def on_window_resize(obj, event):
             size = self.plotter.render_window.GetSize()
-            if size != self.last_window_size:      # evita reconstruir sin cambio real
-                self.last_window_size = size
-                self.build_panel()
-                self.plotter.render()
+            if size == self.last_window_size:
+                return
+            self.last_window_size = size
+            if self.resize_timer_id is not None:
+                vtk_iren.DestroyTimer(self.resize_timer_id)
+            self.resize_timer_id = vtk_iren.CreateOneShotTimer(250)
+
+        def on_resize_timer(obj, event):
+            if self.resize_timer_id is None:
+                return
+            if obj.GetTimerEventId() != self.resize_timer_id:
+                return                      # es otro timer, no el nuestro
+            self.resize_timer_id = None
+            self.build_panel()
+            self.plotter.render()
 
         vtk_iren.AddObserver('CharEvent', block_exit_keys, 1.0)
         vtk_iren.AddObserver('ConfigureEvent', on_window_resize)
+        vtk_iren.AddObserver('TimerEvent', on_resize_timer)
 
         n = len(self.group_keys_ordered)
         self.plotter.enable_3_lights()
-        self.plotter.show(title=f"Aquifer Editor — {self.prop}: {n} grupos")
+        self.plotter.show(title=f"Aquifer3D - {self.prop}: {n} grupos")

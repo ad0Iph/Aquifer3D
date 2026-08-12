@@ -18,7 +18,7 @@ class Surfaces:
             if indices.size == 0:
                 continue
             sub = self.grid.extract_cells(indices)
-            surface = sub.extract_surface(algorithm="dataset_surface").triangulate()
+            surface = sub.extract_surface().triangulate()
             if HAS_REPAIR:
                 surface = repair_surface(surface, decimate=self.decimate,
                                          verbose=False)
@@ -40,7 +40,7 @@ class Surfaces:
             region_mask = region_ids == rid
             grid_cells = group_cell_indices[region_mask]
             comp_grid = connected.extract_cells(np.where(region_mask)[0])
-            comp_surface = comp_grid.extract_surface(algorithm="dataset_surface").triangulate()
+            comp_surface = comp_grid.extract_surface().triangulate()
             components.append({
                 "grid_indices": grid_cells,
                 "surface": comp_surface,
