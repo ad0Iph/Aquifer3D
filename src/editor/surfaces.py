@@ -6,10 +6,9 @@ try:
 except ImportError:
     HAS_REPAIR = False
 
-
 class Surfaces:
     def rebuild_all_surfaces(self):
-        """Reconstruye las superficies de todos los grupos a partir de la malla original y los IDs de grupo"""
+        """Rebuild the surfaces of all groups from the original mesh and group IDs"""
         unique_groups = np.unique(self.group_ids[~np.isnan(self.group_ids)])
         self.surfaces.clear()
 
@@ -25,7 +24,7 @@ class Surfaces:
             self.surfaces[val] = surface
 
     def compute_components(self, group_key):
-        """Calcula los componentes conexos de un grupo y devuelve una lista de diccionarios con sus superficies y celdas"""
+        """Compute the connected components of a group and return a list of dictionaries with their surfaces and cells"""
         group_mask = self.group_ids == group_key
         group_cell_indices = np.where(group_mask)[0]
         if group_cell_indices.size == 0:

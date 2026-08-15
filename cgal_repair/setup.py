@@ -4,7 +4,7 @@ import subprocess
 import sys
 
 def get_cgal_flags():
-    """Intenta obtener include/lib paths de CGAL."""
+    """Attempts to obtain include/lib paths of CGAL."""
     try:
         inc = subprocess.check_output(
             ["pkg-config", "--cflags", "cgal"],
@@ -35,8 +35,8 @@ ext_modules = [
 setup(
     name="cgal_repair",
     version="0.1.0",
-    author="Aquifer3D",
-    description="Reparación y simplificación de mallas con CGAL para modelos MODFLOW en python.",
+    author="PyEarthFab",
+    description="Reparation and simplification of meshes with CGAL for MODFLOW models in python.",
     ext_modules=ext_modules,
     cmdclass={"build_ext": build_ext},
     install_requires=["pybind11>=2.10", "numpy"],

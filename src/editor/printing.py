@@ -1,18 +1,17 @@
 import numpy as np
 
-
 class Printing:
     def prepare_for_printing(self):
-        """Aplica la tolerancia a superficies de frontera para impresión 3D"""
+        """Apply a tolerance to the surfaces to prepare them for 3D printing. This method modifies the surfaces in place and updates the plotter."""
         if self.prepared:
             self.prepared = False
             self.refresh_all_actors()
-            self.update_status("Tolerancia revertida — superficies originales")
+            self.update_status("Tolerance reverted — original surfaces")
             return
 
         try:
             tol = self.tolerance
-            self.update_status(f"Aplicando tolerancia de {tol} mm...")
+            self.update_status(f"Applying tolerance of {tol} mm...")
             self.plotter.render()
 
             full_surface = self.full_surface.triangulate()
@@ -27,7 +26,6 @@ class Printing:
                 pts = np.asarray(surface.points).copy()
                 n_pts = len(pts)
 
-                # Vértices que estan en la frontera
                 is_boundary = np.zeros(n_pts, dtype=bool)
                 for i in range(n_pts):
                     pt_rounded = tuple(np.round(pts[i], decimals=6))
@@ -55,7 +53,7 @@ class Printing:
                             vert_count[vi] += 1
 
                 mask = vert_count > 0
-                vert_normals[mask, 2] = 0.0  # Sin offset en Z
+                vert_normals[mask, 2] = 0.0
                 norms = np.linalg.norm(vert_normals[mask], axis=1, keepdims=True)
                 valid = norms.ravel() > 1e-12
                 vert_normals[mask] = np.where(
@@ -72,8 +70,8 @@ class Printing:
 
             n_groups = len(self.surfaces)
             self.update_status(
-                f"✓ Tolerancia de {tol} mm aplicada a {n_groups} grupos — "
-                f"[L] revertir — [E] exportar")
+                f"Tolerance of {tol} mm applied to {n_groups} groups — "
+                f"[L] Revert — [E] Export")
 
         except Exception as e:
             self.update_status(f"Error: {e}")

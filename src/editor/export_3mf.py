@@ -3,9 +3,8 @@ from pathlib import Path
 from .utils import format_value
 import lib3mf
 
-
 def write_3mf_multi(pieces, path):
-    """pieces: lista de (name, verts, faces, rgba). Todo en un solo 3MF."""
+    """pieces: list of (name, verts, faces, rgba). All in a single 3MF."""
     wrapper = lib3mf.get_wrapper()
     model = wrapper.CreateModel()
 
@@ -43,8 +42,8 @@ def write_3mf_multi(pieces, path):
     writer.WriteToFile(str(path))
 
 class Export:
-    def export_visible(self, max_size_mm=24.0):
-        """Exporta cada malla visible como un 3MF con el color que se muestra en pantalla"""
+    def export_visible(self, max_size_mm=240.0):
+        """Export each visible mesh as a 3MF with the color that is displayed on screen"""
         out_dir = Path("export/editor")
         out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -59,14 +58,14 @@ class Export:
             pieces.append((key, tri))
 
         if not pieces:
-            self.update_status("No hay mallas visibles para exportar")
+            self.update_status("No visible meshes to export")
             return
 
         all_pts = np.vstack([tri.points for _, tri in pieces])
         bb_min = all_pts.min(axis=0)
         bb_max = all_pts.max(axis=0)
-        extent = bb_max - bb_min                  # tamaño en cada eje
-        scale = max_size_mm / extent.max()        # uniforme: un solo factor
+        extent = bb_max - bb_min
+        scale = max_size_mm / extent.max()
 
         to_write = []
         for key, tri in pieces:
@@ -80,10 +79,10 @@ class Export:
             name = f"{self.prop}_{format_value(key)}"
             to_write.append((name, verts, faces, rgba))
 
-        out_path = out_dir / f"{self.prop}_modelo.3mf"
+        out_path = out_dir / f"{self.prop}_model.3mf"
         write_3mf_multi(to_write, out_path)
 
         self.update_status(
-            f"Exportado {out_path} con {len(to_write)} piezas - "
-            f"escala 1:{1/scale:.1f}"
+            f"Exported to {out_path} with {len(to_write)} pieces - "
+            f"scale 1:{1/scale:.1f}"
         )

@@ -7,7 +7,6 @@ except (ImportError, AttributeError):
     import vtk
     BaseStyle = vtk.vtkInteractorStyleTrackballCamera
 
-
 def format_value(v):
     if v == 0:
         return "0"
@@ -15,7 +14,6 @@ def format_value(v):
         return f"{v:.2e}"
     else:
         return f"{v:.4g}"
-
 
 class CutPlaneStyle(BaseStyle):
     def __init__(self, editor):

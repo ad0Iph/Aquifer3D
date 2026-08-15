@@ -1,12 +1,8 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/numpy.h>
 #include <pybind11/stl.h>
-
-// Kernel y Surface_mesh
 #include <CGAL/Exact_predicates_inexact_constructions_kernel.h>
 #include <CGAL/Surface_mesh.h>
-
-// Polygon Mesh Processing (reparación)
 #include <CGAL/Polygon_mesh_processing/repair_polygon_soup.h>
 #include <CGAL/Polygon_mesh_processing/orient_polygon_soup.h>
 #include <CGAL/Polygon_mesh_processing/polygon_soup_to_polygon_mesh.h>
@@ -15,13 +11,10 @@
 #include <CGAL/Polygon_mesh_processing/triangulate_faces.h>
 #include <CGAL/Polygon_mesh_processing/self_intersections.h>
 #include <CGAL/Polygon_mesh_processing/repair.h>
-
-// Surface Mesh Simplification
 #include <CGAL/Surface_mesh_simplification/edge_collapse.h>
 #include <CGAL/Surface_mesh_simplification/Policies/Edge_collapse/Count_ratio_stop_predicate.h>
 #include <CGAL/Surface_mesh_simplification/Policies/Edge_collapse/Edge_length_cost.h>
 #include <CGAL/Surface_mesh_simplification/Policies/Edge_collapse/Midpoint_placement.h>
-
 #include <vector>
 #include <array>
 #include <unordered_map>
@@ -34,9 +27,8 @@ using Kernel = CGAL::Exact_predicates_inexact_constructions_kernel;
 using Point3 = Kernel::Point_3;
 using Mesh   = CGAL::Surface_mesh<Point3>;
 
-// ── Utilidades internas ─────────────────────────────────────────────
 
-/// Construye un Surface_mesh desde arrays de NumPy (vértices + caras).
+/// builds a Surface_mesh from NumPy arrays of vertices and faces.
 static Mesh build_mesh(py::array_t<double> vertices_np, py::array_t<int> faces_np)
 {
     auto v_buf = vertices_np.unchecked<2>();
@@ -63,7 +55,7 @@ static Mesh build_mesh(py::array_t<double> vertices_np, py::array_t<int> faces_n
     return mesh;
 }
 
-/// Extrae vértices y caras de un Surface_mesh a arrays de NumPy.
+/// Extracts vertices and faces from a Surface_mesh to NumPy arrays.
 static std::tuple<py::array_t<double>, py::array_t<int>>
 extract_mesh(const Mesh& mesh)
 {
@@ -101,7 +93,7 @@ extract_mesh(const Mesh& mesh)
     return {out_verts, out_faces};
 }
 
-/// Repara una malla para hacerla watertight.
+/// Repairs a mesh to make it watertight.
 std::tuple<py::array_t<double>, py::array_t<int>>
 repair_mesh(py::array_t<double> vertices_np, py::array_t<int> faces_np)
 {
@@ -111,7 +103,6 @@ repair_mesh(py::array_t<double> vertices_np, py::array_t<int> faces_np)
     size_t n_verts = v_buf.shape(0);
     size_t n_faces = f_buf.shape(0);
 
-    // 1. Polygon soup
     std::vector<Point3> points;
     points.reserve(n_verts);
     for (size_t i = 0; i < n_verts; ++i)
@@ -126,15 +117,12 @@ repair_mesh(py::array_t<double> vertices_np, py::array_t<int> faces_np)
             static_cast<size_t>(f_buf(i, 2))
         });
 
-    // 2. Reparar y orientar
     PMP::repair_polygon_soup(points, polygons);
     PMP::orient_polygon_soup(points, polygons);
 
-    // 3. Construir mesh
     Mesh mesh;
     PMP::polygon_soup_to_polygon_mesh(points, polygons, mesh);
 
-    // 4. Unir bordes, limpiar, triangular
     PMP::stitch_borders(mesh);
     PMP::remove_degenerate_edges(mesh);
     PMP::remove_degenerate_faces(mesh);
@@ -157,6 +145,7 @@ repair_mesh(py::array_t<double> vertices_np, py::array_t<int> faces_np)
     return extract_mesh(mesh);
 }
 
+// Simplifies a mesh by reducing faces through edge collapse.
 std::tuple<py::array_t<double>, py::array_t<int>>
 simplify_mesh(py::array_t<double> vertices_np, py::array_t<int> faces_np,
               double ratio)
@@ -177,21 +166,18 @@ simplify_mesh(py::array_t<double> vertices_np, py::array_t<int> faces_np,
     return extract_mesh(mesh);
 }
 
-/// Repara + simplifica en un solo paso.
 std::tuple<py::array_t<double>, py::array_t<int>>
 repair_and_simplify(py::array_t<double> vertices_np, py::array_t<int> faces_np,
                     double ratio)
 {
-    // Primero reparar
     auto [rep_verts, rep_faces] = repair_mesh(vertices_np, faces_np);
 
-    // Después simplificar
     auto [simp_verts, simp_faces] = simplify_mesh(rep_verts, rep_faces, ratio);
 
     return repair_mesh(simp_verts, simp_faces);
 }
 
-/// Verifica si una malla es cerrada (watertight).
+// Checks if a mesh is closed (watertight).
 bool is_closed(py::array_t<double> vertices_np, py::array_t<int> faces_np)
 {
     auto v_buf = vertices_np.unchecked<2>();
@@ -218,26 +204,24 @@ bool is_closed(py::array_t<double> vertices_np, py::array_t<int> faces_np)
     return CGAL::is_closed(mesh);
 }
 
-// ── Módulo pybind11 ─────────────────────────────────────────────────
-
 PYBIND11_MODULE(cgal_repair, m) {
-    m.doc() = "Reparación y simplificación de mallas usando CGAL";
+    m.doc() = "Reparation and simplification of meshes using CGAL";
 
     m.def("repair_mesh", &repair_mesh,
           py::arg("vertices"), py::arg("faces"),
-          "Repara una malla triangulada para hacerla watertight.");
+          "Repairs a triangulated mesh to make it watertight.");
 
     m.def("simplify_mesh", &simplify_mesh,
           py::arg("vertices"), py::arg("faces"), py::arg("ratio"),
           R"doc(
-          Simplifica una malla reduciendo caras mediante edge collapse.
+          Simplifies a mesh by reducing faces through edge collapse.
 
           Parameters
           ----------
           vertices : np.ndarray (N, 3) float64
           faces : np.ndarray (M, 3) int32
           ratio : float
-              Fracción de aristas a mantener (0.5 = ~50% de caras).
+              Fraction of edges to keep (0.5 = ~50% of faces).
 
           Returns
           -------
@@ -246,9 +230,9 @@ PYBIND11_MODULE(cgal_repair, m) {
 
     m.def("repair_and_simplify", &repair_and_simplify,
           py::arg("vertices"), py::arg("faces"), py::arg("ratio"),
-          "Repara y simplifica en un solo paso.");
+          "Repairs and simplifies a mesh in a single step.");
 
     m.def("is_closed", &is_closed,
           py::arg("vertices"), py::arg("faces"),
-          "Verifica si una malla es cerrada (watertight).");
+          "Checks if a mesh is closed (watertight).");
 }

@@ -1,7 +1,6 @@
 import numpy as np
 import pyvista as pv
 import matplotlib.pyplot as plt
-
 from .utils import format_value
 from .surfaces import Surfaces
 from .rendering import Rendering
@@ -9,7 +8,6 @@ from .selection import Selection
 from .cut_plane import CutPlane
 from .printing import Printing
 from .export_3mf import Export
-
 
 class AquiferEditor(
     Surfaces,
@@ -19,29 +17,24 @@ class AquiferEditor(
     Printing,
     Export,
 ):  
-    # Resolución de la ventana de PyVista
     WINDOW_W = 1400
     WINDOW_H = 900
 
     def __init__(self, aquifer, prop="k", z_exag=1.0, decimate=0.0,
-                 tolerance=0.15, cmap_name=None):
+                 tolerance=0.5, cmap_name=None):
         self.prop = prop
         self.z_exag = z_exag
         self.decimate = decimate
         self.tolerance = tolerance
         self.cmap_name = cmap_name
 
-        # Grid de PyVista desde el modelo MODFLOW
         self.grid = aquifer.build_grid(prop=prop, z_exag=z_exag)
 
-        # Array de IDs de grupo por celda
         self.group_ids = self.grid.cell_data[prop].copy()
 
-        # Superficies por grupo
         self.surfaces = {}
         self.rebuild_all_surfaces()
 
-        # Actores, visibilidad y colores
         self.actors = {}
         self.visible = {}
         self.colors = {}
@@ -57,7 +50,6 @@ class AquiferEditor(
             self.colors[key] = cmap(idx / max(n - 1, 1))[:3]
             self.visible[key] = True
 
-        # Estado de selección
         self.mode = self.MODE_VIEW
         self.source_group = None
         self.components = []
@@ -66,7 +58,6 @@ class AquiferEditor(
         self.highlight_actor = None
         self.num_buffer = ""
 
-        # Plano de corte libre
         self.cut_active = False
         self.cut_origin = None
         self.cut_rotation = np.eye(3)
@@ -74,7 +65,6 @@ class AquiferEditor(
         
         self.cut_actor = None
         self.cut_border_actor = None
-        self.cut_line_actors = []
         self.cut_counter = 0
         self.move_step = 2.0
         self.rot_step = 2.0
@@ -82,25 +72,21 @@ class AquiferEditor(
         self.keys_down = set()
         self.key_observers = []
 
-        # Preparación para impresión
         self.prepared = False
         self.full_surface = self.grid.extract_surface()
 
-        # Plotter
         self.plotter = None
         self.group_keys_ordered = group_keys
         self.status_actor = None
 
-        # UI 
         self.ui_text_actors = []
         self.last_window_size = (self.WINDOW_W, self.WINDOW_H)
         self.resize_timer_id = None
 
-        # Info
         self.show_bounds = False
 
     def update_status(self, text):
-        """Actualiza el texto de estado en la barra inferior."""
+        """Update the status text displayed in the UI."""
         if self.status_actor is not None:
             self.plotter.remove_actor(self.status_actor)
         self.status_actor = self.plotter.add_text(
@@ -108,14 +94,13 @@ class AquiferEditor(
             color="black", name="status_text")
         
     def build_panel(self):
-        """(Re)construye casillas, etiquetas y texto de ayuda según el tamaño actual."""
-        # Limpiar panel anterior
+        """Builds the UI panel with checkboxes for each group and instructions."""
         for actor in self.ui_text_actors:
             self.plotter.remove_actor(actor)
         self.ui_text_actors = []
         self.plotter.clear_button_widgets()
 
-        w, h = self.plotter.render_window.GetSize()   # tamaño ACTUAL, no la constante
+        w, h = self.plotter.render_window.GetSize()
         checkbox_size = 22
         row_height = checkbox_size + 10
         col_width = 230
@@ -143,9 +128,9 @@ class AquiferEditor(
             self.ui_text_actors.append(t)
 
         t = self.plotter.add_text(
-            "[S] Seleccionar  [N/P] Navegar  [D+num] Destino  [G] Confirmar  "
-            "[T] Plano de corte  [F] Cortar  [L] Preparar impresión [I] Mostrar límites  "
-            "[Esc] Cancelar  [C] Reset líneas  [E] Exportar",
+            "[S] Select  [N/P] Navigate  [D+num] Destination  [G] Confirm  "
+            "[T] Cutting plane  [F] Cut  [L] Prepare for printing [I] Show bounds  "
+            "[Esc] Cancel  [E] Export",
             position=(10, 30), font_size=7, color="grey")
         self.ui_text_actors.append(t)
 
@@ -162,7 +147,6 @@ class AquiferEditor(
         self.plotter.add_key_event("f", self.execute_cut)
         self.plotter.add_key_event("e", self.export_visible)
         self.plotter.add_key_event("Escape", self.cancel)
-        self.plotter.add_key_event("c", self.clear_cut_lines)
         self.plotter.add_key_event("i", self.toggle_bounds)
 
         for i in "0123456789":
@@ -174,12 +158,12 @@ class AquiferEditor(
             
 
         self.update_status(
-            f"{len(self.group_keys_ordered)} grupos — "
-            f"[S] seleccionar  [T] plano de corte")
+            f"{len(self.group_keys_ordered)} groups — "
+            f"[S] Select  [T] Cutting plane")
 
 
     def show(self):
-        """ Muestra la ventana de PyVista con la escena 3D y la interfaz de usuario """
+        """Show the interactive 3D plotter with the aquifer model and UI."""
         self.plotter = pv.Plotter(window_size=[self.WINDOW_W, self.WINDOW_H])
         self.plotter.background_color = "white"
         for key in self.group_keys_ordered:
@@ -187,7 +171,6 @@ class AquiferEditor(
         self.setup_ui()
         self.plotter.add_axes(xlabel="X (m)", ylabel="Y (m)", zlabel="Z (m)")
 
-        # Bloquear teclas que VTK usa para cerrar/zoom
         iren = self.plotter.iren
         if hasattr(iren, 'interactor') and iren.interactor is not None:
             vtk_iren = iren.interactor
@@ -197,12 +180,13 @@ class AquiferEditor(
             vtk_iren = iren
 
         def block_exit_keys(obj, event):
-            """Bloqueo de teclas especial de VTK"""
+            """Blocks certain VTK keys that would exit the application."""
             key = vtk_iren.GetKeySym()
             if key and key.lower() in ('e', 'q', '3', 'f'):
                 vtk_iren.SetKeyCode('\0')
 
         def on_window_resize(obj, event):
+            """Handles window resize events to rebuild the UI panel after resizing."""
             size = self.plotter.render_window.GetSize()
             if size == self.last_window_size:
                 return
@@ -212,10 +196,11 @@ class AquiferEditor(
             self.resize_timer_id = vtk_iren.CreateOneShotTimer(250)
 
         def on_resize_timer(obj, event):
+            """Handles the timer event after a window resize to rebuild the UI panel."""
             if self.resize_timer_id is None:
                 return
             if obj.GetTimerEventId() != self.resize_timer_id:
-                return                      # es otro timer, no el nuestro
+                return               
             self.resize_timer_id = None
             self.build_panel()
             self.plotter.render()
@@ -225,5 +210,4 @@ class AquiferEditor(
         vtk_iren.AddObserver('TimerEvent', on_resize_timer)
 
         n = len(self.group_keys_ordered)
-        self.plotter.enable_3_lights()
-        self.plotter.show(title=f"Aquifer3D - {self.prop}: {n} grupos")
+        self.plotter.show(title=f"PyEarthFab - {self.prop}: {n} groups")
