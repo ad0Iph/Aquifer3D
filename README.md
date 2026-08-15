@@ -2,6 +2,8 @@
 
 A Python framework for transforming Earth science models into 3D printable physical representations. Supported models: structured mesh from MODFLOW 6. 
 
+<img width="1396" height="896" alt="image" src="https://github.com/user-attachments/assets/3bcde8b9-f681-43d4-bcc9-b709d9c380a5" />
+
 ## Project structure
 
 ```
