@@ -198,10 +198,14 @@ python edit_model.py ..\model_path --cmap Set1
 
 #### Apply tolerance
 
+| Key | Action |
+|-----|--------|
 | `L` | Apply/revert printing tolerance |
 
 #### Export
 
+| Key | Action |
+|-----|--------|
 | `E` | Export visible meshes to 3MF |
 
 ## 3D-printing workflow example
