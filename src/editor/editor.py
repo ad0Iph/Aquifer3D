@@ -105,7 +105,7 @@ class AquiferEditor(
         row_height = checkbox_size + 10
         col_width = 230
         y_start = h - 50
-        max_rows = 5
+        max_rows = max(1, (h - 50 - 90) // row_height)
 
         for idx, key in enumerate(self.group_keys_ordered):
             col, row = divmod(idx, max_rows)
@@ -161,6 +161,27 @@ class AquiferEditor(
             f"{len(self.group_keys_ordered)} groups — "
             f"[S] Select  [T] Cutting plane")
 
+    def reposition_panel(self):
+            """Reoganizase the UI panel when the window is resized."""
+            n = len(self.group_keys_ordered)
+            if len(self.plotter.button_widgets) != n or len(self.ui_text_actors) < n:
+                self.build_panel() 
+                return
+    
+            _, h = self.plotter.render_window.GetSize()
+            checkbox_size = 22
+            row_height = checkbox_size + 10
+            col_width = 230
+            y_start = h - 50
+            max_rows = max(1, (h - 50 - 90) // row_height)
+    
+            for idx in range(n):
+                col, row = divmod(idx, max_rows)
+                x = 10 + col * col_width
+                y = y_start - row * row_height
+                rep = self.plotter.button_widgets[idx].GetRepresentation()
+                rep.PlaceWidget([x, x + checkbox_size, y, y + checkbox_size, 0.0, 0.0])
+                self.ui_text_actors[idx].SetPosition(x + 30, y + 2)
 
     def show(self):
         """Show the interactive 3D plotter with the aquifer model and UI."""
@@ -184,30 +205,18 @@ class AquiferEditor(
             key = vtk_iren.GetKeySym()
             if key and key.lower() in ('e', 'q', '3', 'f'):
                 vtk_iren.SetKeyCode('\0')
-
+    
         def on_window_resize(obj, event):
             """Handles window resize events to rebuild the UI panel after resizing."""
             size = self.plotter.render_window.GetSize()
             if size == self.last_window_size:
                 return
             self.last_window_size = size
-            if self.resize_timer_id is not None:
-                vtk_iren.DestroyTimer(self.resize_timer_id)
-            self.resize_timer_id = vtk_iren.CreateOneShotTimer(250)
-
-        def on_resize_timer(obj, event):
-            """Handles the timer event after a window resize to rebuild the UI panel."""
-            if self.resize_timer_id is None:
-                return
-            if obj.GetTimerEventId() != self.resize_timer_id:
-                return               
-            self.resize_timer_id = None
-            self.build_panel()
+            self.reposition_panel()
             self.plotter.render()
 
         vtk_iren.AddObserver('CharEvent', block_exit_keys, 1.0)
         vtk_iren.AddObserver('ConfigureEvent', on_window_resize)
-        vtk_iren.AddObserver('TimerEvent', on_resize_timer)
 
         n = len(self.group_keys_ordered)
         self.plotter.show(title=f"PyEarthFab - {self.prop}: {n} groups")
