@@ -32,6 +32,9 @@ class AquiferEditor(
 
         self.group_ids = self.grid.cell_data[prop].copy()
 
+        self.prepared = False
+        self.full_surface = self.grid.extract_surface()
+
         self.surfaces = {}
         self.rebuild_all_surfaces()
 
@@ -71,9 +74,6 @@ class AquiferEditor(
         self.original_style = None
         self.keys_down = set()
         self.key_observers = []
-
-        self.prepared = False
-        self.full_surface = self.grid.extract_surface()
 
         self.plotter = None
         self.group_keys_ordered = group_keys

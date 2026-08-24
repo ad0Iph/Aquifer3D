@@ -81,7 +81,7 @@ class Rendering:
                 grid='front', location='outer', all_edges=True,
                 font_size=14, n_xlabels=4, n_ylabels=4, n_zlabels=2,
                 xtitle='X (m)', ytitle='Y (m)',
-                ztitle=f'Z (m, vista x{self.z_exag:g})',
+                ztitle=f'Z (m, scale x{self.z_exag:g})',
                 bounds=self.grid.bounds,
                 axes_ranges=(xmin, xmax, ymin, ymax,
                             zmin / self.z_exag, zmax / self.z_exag))
