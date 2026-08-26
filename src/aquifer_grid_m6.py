@@ -50,12 +50,19 @@ class AquiferGridM6:
         self.properties["k"] = npf.k.get_data().copy()
 
         try:
+            k22_array = npf.k22.get_data()
+            if k22_array is not None:
+                self.properties["k22"] = k22_array.copy()
+        except Exception:
+            pass
+
+        try:
             k33_array = npf.k33.get_data()
             if k33_array is not None:
                 self.properties["k33"] = k33_array.copy()
         except Exception:
             pass
-
+        
     def build_grid(self, prop="k", z_exag=1.0):
         """Construye un grid de PyVista a partir de la geometría y propiedades cargadas del modelo MODFLOW 6"""
         self.check_loaded()

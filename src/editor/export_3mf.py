@@ -43,7 +43,7 @@ def write_3mf_multi(pieces, path):
 
 class Export:
     def export_visible(self, max_size_mm=240.0):
-        """Export each visible mesh as a 3MF with the color that is displayed on screen"""
+        """Export the visible meshes: one combined model + one file per part."""
         out_dir = Path("export/editor")
         out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -54,8 +54,7 @@ class Export:
             surface = self.surfaces.get(key)
             if surface is None or surface.n_cells == 0:
                 continue
-            tri = surface.triangulate().copy(deep=True)
-            pieces.append((key, tri))
+            pieces.append((key, surface.triangulate().copy(deep=True)))
 
         if not pieces:
             self.update_status("No visible meshes to export")
@@ -63,26 +62,26 @@ class Export:
 
         all_pts = np.vstack([tri.points for _, tri in pieces])
         bb_min = all_pts.min(axis=0)
-        bb_max = all_pts.max(axis=0)
-        extent = bb_max - bb_min
-        scale = max_size_mm / extent.max()
+        scale = max_size_mm / (all_pts.max(axis=0) - bb_min).max()
 
         to_write = []
         for key, tri in pieces:
             verts = (np.asarray(tri.points) - bb_min) * scale
             faces = tri.faces.reshape(-1, 4)[:, 1:4]
-
             rgb = self.colors.get(key, (0.5, 0.5, 0.5))
-            rgba = [round(rgb[0]*255), round(rgb[1]*255),
-                    round(rgb[2]*255), 255]
+            rgba = [round(rgb[0] * 255), round(rgb[1] * 255),
+                    round(rgb[2] * 255), 255]
+            to_write.append((f"{self.prop}_{format_value(key)}",
+                             verts, faces, rgba))
 
-            name = f"{self.prop}_{format_value(key)}"
-            to_write.append((name, verts, faces, rgba))
+        full_path = out_dir / f"{self.prop}_model.3mf"
+        write_3mf_multi(to_write, full_path)
 
-        out_path = out_dir / f"{self.prop}_model.3mf"
-        write_3mf_multi(to_write, out_path)
+        parts_dir = out_dir / "parts"
+        parts_dir.mkdir(exist_ok=True)
+        for piece in to_write:
+            write_3mf_multi([piece], parts_dir / f"{piece[0]}.3mf")
 
         self.update_status(
-            f"Exported to {out_path} with {len(to_write)} pieces - "
-            f"scale 1:{1/scale:.1f}"
-        )
+            f"Exported {full_path.name} + {len(to_write)} parts"
+            f"- scale 1:{1/scale:.1f}")
